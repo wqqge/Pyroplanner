@@ -546,6 +546,10 @@ function clearImage() {
 }
 
 function initializeDatabase() {
+  // Diese Funktion wird nur noch für manuelle Initialisierung verwendet
+  // Keine automatischen Beispiel-Effekte mehr!
+  console.log('⚠️ initializeDatabase() aufgerufen - sollte nicht automatisch passieren!');
+  
   const sampleEffects = [
     {name: "Goldener Regen", duration: "0:15", price: 12.50, barcode: "4260123456789", effectType: "fountain"},
     {name: "Silber Rakete", duration: "0:03", price: 8.90, barcode: "4260123456790", effectType: "rocket"},
@@ -557,6 +561,7 @@ function initializeDatabase() {
   effectDatabase = sampleEffects;
   localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
   updateDatabaseList();
+  console.log('✅ Beispiel-Datenbank manuell erstellt');
 }
 
 function loadEffectDatabase() {
@@ -571,8 +576,10 @@ function loadEffectDatabase() {
       
       // Validiere Datenbank-Struktur
       if (!Array.isArray(parsedDatabase)) {
-        console.error('❌ Datenbank ist kein Array, erstelle neue...');
-        initializeDatabase();
+        console.error('❌ Datenbank ist kein Array, erstelle leere Datenbank...');
+        effectDatabase = [];
+        localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
+        updateDatabaseList();
         return;
       }
       
@@ -586,12 +593,18 @@ function loadEffectDatabase() {
         console.log('ℹ️ Datenbank ist leer - das ist OK!');
       } else {
         console.log(`✅ ${effectDatabase.length} Effekte erfolgreich geladen`);
+        // Zeige die ersten paar Effekte zur Bestätigung
+        effectDatabase.slice(0, 3).forEach((effect, i) => {
+          console.log(`${i + 1}. ${effect.name} - ${effect.addedDate ? new Date(effect.addedDate).toLocaleString() : 'Kein Datum'}`);
+        });
       }
       
     } catch (error) {
       console.error('❌ Fehler beim Laden der Datenbank:', error);
-      console.log('🔧 Erstelle neue Datenbank wegen Fehler...');
-      initializeDatabase();
+      console.log('🔧 Erstelle leere Datenbank wegen Fehler...');
+      effectDatabase = [];
+      localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
+      updateDatabaseList();
       return;
     }
   } else {
@@ -868,14 +881,22 @@ function addToDatabase() {
   };
   
   console.log('💾 Füge Effekt zur Datenbank hinzu:', newEffect);
+  console.log('📊 Datenbank vor dem Hinzufügen:', effectDatabase.length, 'Effekte');
+  
+  // Prüfe LocalStorage vor dem Hinzufügen
+  const beforeStorage = localStorage.getItem('effectDatabase');
+  console.log('📋 LocalStorage vor Änderung:', beforeStorage ? JSON.parse(beforeStorage).length : 0, 'Effekte');
   
   effectDatabase.push(newEffect);
+  console.log('📊 Datenbank nach dem Hinzufügen:', effectDatabase.length, 'Effekte');
   
   // Speichere mit umfassender Validierung
   try {
     const jsonString = JSON.stringify(effectDatabase);
+    console.log('💾 Speichere JSON-String mit', jsonString.length, 'Zeichen');
+    
     localStorage.setItem('effectDatabase', jsonString);
-    console.log('💾 Effekt gespeichert. Datenbank hat jetzt', effectDatabase.length, 'Effekte');
+    console.log('💾 LocalStorage.setItem() ausgeführt');
     
     // Sofortige Verifikation der Speicherung
     const verification = localStorage.getItem('effectDatabase');
@@ -885,12 +906,14 @@ function addToDatabase() {
       
       // Prüfe ob der neue Effekt wirklich drin ist
       const lastEffect = parsed[parsed.length - 1];
-      if (lastEffect && lastEffect.name === name) {
+      if (lastEffect && lastEffect.name === name && lastEffect.addedDate === newEffect.addedDate) {
         console.log('✅ Neuer Effekt erfolgreich gespeichert:', lastEffect.name);
         console.log('📋 Effekt-Details:', lastEffect);
+        console.log('🕒 Hinzugefügt am:', new Date(lastEffect.addedDate).toLocaleString());
       } else {
-        console.error('❌ KRITISCHER FEHLER: Neuer Effekt nicht in LocalStorage!');
-        console.error('Erwartet:', name, 'Gefunden:', lastEffect ? lastEffect.name : 'nichts');
+        console.error('❌ KRITISCHER FEHLER: Neuer Effekt nicht korrekt in LocalStorage!');
+        console.error('Erwartet:', name, 'mit Datum:', newEffect.addedDate);
+        console.error('Gefunden:', lastEffect ? lastEffect.name : 'nichts', 'mit Datum:', lastEffect ? lastEffect.addedDate : 'kein Datum');
         alert('❌ KRITISCHER FEHLER: Effekt wurde nicht korrekt gespeichert!');
         return;
       }
@@ -899,22 +922,26 @@ function addToDatabase() {
       if (parsed.length !== effectDatabase.length) {
         console.error('❌ INKONSISTENZ: LocalStorage und Variable haben unterschiedliche Längen!');
         console.error('Variable:', effectDatabase.length, 'LocalStorage:', parsed.length);
+        alert('❌ WARNUNG: Inkonsistenz zwischen Speicher und Variable!');
+      } else {
+        console.log('✅ Variable und LocalStorage sind konsistent');
       }
     } else {
       console.error('❌ KRITISCHER FEHLER: Nichts im LocalStorage gespeichert!');
-      alert('❌ KRITISCHER FEHLER: Speicherung fehlgeschlagen!');
+      alert('❌ KRITISCHER FEHLER: Speicherung fehlgeschlagen - LocalStorage leer!');
       return;
     }
   } catch (error) {
     console.error('❌ Fehler beim Speichern des Effekts:', error);
-    alert('❌ Fehler beim Speichern! Möglicherweise ist der Browser-Speicher voll.');
+    console.error('❌ Error Stack:', error.stack);
+    alert('❌ Fehler beim Speichern! Möglicherweise ist der Browser-Speicher voll.\n\nFehler: ' + error.message);
     return;
   }
   
   updateDatabaseList();
   
   const imageText = currentEffectImage ? ' (mit Bild)' : '';
-  alert(`Effekt "${name}"${imageText} zur Datenbank hinzugefügt!\nDatenbank hat jetzt ${effectDatabase.length} Effekte.`);
+  alert(`✅ Effekt "${name}"${imageText} zur Datenbank hinzugefügt!\n\n📊 Datenbank hat jetzt ${effectDatabase.length} Effekte.\n🕒 Hinzugefügt: ${new Date().toLocaleString()}`);
   
   // Clear form after adding
   clearImage();
@@ -1819,10 +1846,20 @@ function testDatabase() {
   
   // Test 1: Prüfe ob Datenbank existiert
   console.log('Test 1 - Datenbank-Variable:', effectDatabase);
+  console.log('Test 1a - Datenbank-Länge:', effectDatabase.length);
   
   // Test 2: Prüfe LocalStorage
   const stored = localStorage.getItem('effectDatabase');
   console.log('Test 2 - LocalStorage:', stored ? 'Vorhanden' : 'Leer');
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      console.log('Test 2a - LocalStorage-Länge:', parsed.length);
+      console.log('Test 2b - Erste 3 Effekte:', parsed.slice(0, 3));
+    } catch (error) {
+      console.error('Test 2c - Fehler beim Parsen:', error);
+    }
+  }
   
   // Test 3: Prüfe Dropdown-Element
   const dropdown = document.getElementById('effectDatabase');
@@ -1832,11 +1869,76 @@ function testDatabase() {
     console.log('Test 3a - Dropdown-Optionen:', dropdown.options.length);
   }
   
-  // Test 4: Erzwinge Datenbank-Neuaufbau
-  console.log('Test 4 - Erzwinge Neuaufbau...');
-  initializeDatabase();
+  // Test 4: Konsistenz-Check
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      if (parsed.length === effectDatabase.length) {
+        console.log('✅ Test 4 - Variable und LocalStorage sind konsistent');
+      } else {
+        console.error('❌ Test 4 - INKONSISTENZ gefunden!');
+        console.error('Variable:', effectDatabase.length, 'LocalStorage:', parsed.length);
+      }
+    } catch (error) {
+      console.error('❌ Test 4 - Fehler bei Konsistenz-Check:', error);
+    }
+  }
   
   console.log('🧪 Datenbank-Test abgeschlossen!');
+}
+
+// Neue Funktion: Speicher-Persistenz testen
+function testPersistence() {
+  console.log('🔬 Teste Speicher-Persistenz...');
+  
+  const testEffect = {
+    name: 'TEST_EFFEKT_' + Date.now(),
+    effectType: 'rocket',
+    duration: '0:05',
+    price: 99.99,
+    barcode: 'TEST123',
+    addedDate: new Date().toISOString()
+  };
+  
+  console.log('📝 Füge Test-Effekt hinzu:', testEffect.name);
+  
+  // Speichere aktuellen Zustand
+  const originalLength = effectDatabase.length;
+  
+  // Füge Test-Effekt hinzu
+  effectDatabase.push(testEffect);
+  localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
+  
+  // Sofort prüfen
+  const immediate = localStorage.getItem('effectDatabase');
+  const immediateData = JSON.parse(immediate);
+  
+  if (immediateData.length === originalLength + 1) {
+    console.log('✅ Sofortige Speicherung erfolgreich');
+    
+    // Simuliere Neustart durch Neuladen der Datenbank
+    loadEffectDatabase();
+    
+    // Prüfe ob Test-Effekt noch da ist
+    const foundEffect = effectDatabase.find(e => e.name === testEffect.name);
+    if (foundEffect) {
+      console.log('✅ Test-Effekt nach Neuladung gefunden:', foundEffect.name);
+      console.log('✅ PERSISTENZ-TEST ERFOLGREICH!');
+      
+      // Entferne Test-Effekt wieder
+      effectDatabase = effectDatabase.filter(e => e.name !== testEffect.name);
+      localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
+      updateDatabaseList();
+      console.log('🧹 Test-Effekt entfernt');
+    } else {
+      console.error('❌ Test-Effekt nach Neuladung NICHT gefunden!');
+      console.error('❌ PERSISTENZ-TEST FEHLGESCHLAGEN!');
+    }
+  } else {
+    console.error('❌ Sofortige Speicherung fehlgeschlagen');
+  }
+  
+  console.log('🔬 Persistenz-Test abgeschlossen!');
 }
 
 // Search functions for large databases
@@ -1948,5 +2050,5 @@ window.addEventListener('load', function() {
 });
 </script>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'986ac055d51fdbad',t:'MTc1OTE0MTI2MS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'986ac76937e73654',t:'MTc1OTE0MTU1MS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
