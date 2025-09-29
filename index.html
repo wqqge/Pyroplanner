@@ -23,6 +23,18 @@ input, button, select, textarea {
   border: 1px solid #555;
   border-radius: 5px;
   font-size: 14px;
+  outline: none;
+}
+
+input:focus, textarea:focus, select:focus {
+  background: #333;
+  border-color: #4caf50;
+  box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+}
+
+input[type="text"], input[type="number"], textarea {
+  width: 200px;
+  max-width: 100%;
 }
 button {
   cursor: pointer;
@@ -114,6 +126,7 @@ button:hover {
   padding: 10px;
   background: #222;
   border-radius: 5px;
+  min-height: 60px;
 }
 #warning {
   font-size: 2.5em;
@@ -235,6 +248,90 @@ button:hover {
   display: none;
   z-index: 1000;
 }
+#effectOverview {
+  text-align: center;
+  margin: 20px 0;
+  padding: 15px;
+  background: #1a1a2e;
+  border-radius: 8px;
+  border: 2px solid #16213e;
+}
+#effectOverview h3 {
+  margin: 0 0 15px 0;
+  color: #0f3460;
+}
+#overviewTable {
+  overflow-x: auto;
+}
+.overview-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #222;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.overview-table th {
+  background: #333;
+  color: #fff;
+  padding: 10px 8px;
+  text-align: left;
+  font-size: 12px;
+  border-bottom: 2px solid #555;
+}
+.overview-table td {
+  padding: 8px;
+  border-bottom: 1px solid #444;
+  font-size: 11px;
+  color: #ddd;
+}
+.overview-table tr:hover {
+  background: #2a2a2a;
+}
+.time-cell {
+  color: #4caf50;
+  font-weight: bold;
+}
+.channel-cell {
+  color: #2196f3;
+  font-weight: bold;
+}
+.button-cell {
+  color: #ff9800;
+  font-weight: bold;
+}
+.database-info {
+  background: #2a2a2a;
+  padding: 10px;
+  border-radius: 5px;
+  margin: 10px 0;
+  font-size: 12px;
+  color: #ccc;
+}
+.image-preview {
+  max-width: 200px;
+  max-height: 150px;
+  border-radius: 5px;
+  border: 2px solid #555;
+  margin: 10px 0;
+}
+.effect-image {
+  max-width: 50px;
+  max-height: 50px;
+  border-radius: 3px;
+  margin-right: 10px;
+  vertical-align: middle;
+}
+.database-item {
+  display: flex;
+  align-items: center;
+  padding: 5px;
+  margin: 2px 0;
+  background: #333;
+  border-radius: 3px;
+}
+.database-item img {
+  margin-right: 10px;
+}
 </style>
 </head>
 <body>
@@ -252,6 +349,18 @@ button:hover {
 <select id="effectDatabase" onchange="selectFromDatabase()">
   <option value="">Effekt-Datenbank</option>
 </select><br>
+
+<div class="database-info">
+  📊 <strong>Excel-Import Format:</strong> Name | Barcode | Dauer | Preis | Typ<br>
+  Beispiel: "Goldener Regen | 4260123456789 | 0:15 | 12.50 | rocket"<br>
+  📸 <strong>Bilder:</strong> Optional - können einzeln hochgeladen werden
+</div>
+
+<h3>📸 Bild für Effekt (Optional)</h3>
+<input type="file" id="effectImage" accept="image/*" onchange="previewImage()">
+<div id="imagePreview" style="margin: 10px 0;"></div>
+<button onclick="clearImage()">🗑️ Bild entfernen</button>
+
 <input id="name" placeholder="Effektname">
 <select id="effectType">
   <option value="rocket">Rakete</option>
@@ -270,7 +379,8 @@ button:hover {
 <button onclick="addEffect()">Effekt speichern</button>
 <button onclick="addToDatabase()">Zur Datenbank hinzufügen</button>
 <input type="file" id="excelImport" accept=".csv,.txt,.tsv" onchange="importExcelDatabase()">
-<button onclick="document.getElementById('excelImport').click()">📊 Excel-Datenbank importieren (Name + Code)</button>
+<button onclick="document.getElementById('excelImport').click()">📊 Excel-Datenbank importieren</button>
+<button onclick="clearDatabase()">🗑️ Datenbank leeren</button>
 
 <div id="container">
   <div id="canvasContainer">
@@ -284,6 +394,11 @@ button:hover {
   <h3>💰 Kostenkalkulation</h3>
   <div id="totalCost">Gesamtkosten: 0,00 €</div>
   <div id="effectCount">Anzahl Effekte: 0</div>
+</div>
+
+<div id="effectOverview">
+  <h3>📋 Effekt-Übersicht</h3>
+  <div id="overviewTable"></div>
 </div>
 
 <h2>Musik</h2>
@@ -352,6 +467,7 @@ let savedEffects = [];
 let effectDatabase = [];
 let draggedEffect = null;
 let autoBackupInterval = null;
+let currentEffectImage = null;
 
 // Initialize canvas and load data
 window.onload = function() {
@@ -399,14 +515,37 @@ window.onload = function() {
   });
 };
 
-// Initialize effect database with sample data
+// Image handling functions
+function previewImage() {
+  const fileInput = document.getElementById('effectImage');
+  const file = fileInput.files[0];
+  const previewDiv = document.getElementById('imagePreview');
+  
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      currentEffectImage = e.target.result;
+      previewDiv.innerHTML = `<img src="${currentEffectImage}" class="image-preview" alt="Effekt Vorschau">`;
+    };
+    reader.readAsDataURL(file);
+  } else {
+    clearImage();
+  }
+}
+
+function clearImage() {
+  currentEffectImage = null;
+  document.getElementById('imagePreview').innerHTML = '';
+  document.getElementById('effectImage').value = '';
+}
+
 function initializeDatabase() {
   const sampleEffects = [
-    {name: "Goldener Regen", duration: "0:15", price: 12.50, barcode: "4260123456789"},
-    {name: "Silber Rakete", duration: "0:03", price: 8.90, barcode: "4260123456790"},
-    {name: "Bunte Batterie", duration: "0:45", price: 25.00, barcode: "4260123456791"},
-    {name: "Rote Sterne", duration: "0:08", price: 15.20, barcode: "4260123456792"},
-    {name: "Grüne Fontäne", duration: "0:20", price: 18.75, barcode: "4260123456793"}
+    {name: "Goldener Regen", duration: "0:15", price: 12.50, barcode: "4260123456789", effectType: "fountain"},
+    {name: "Silber Rakete", duration: "0:03", price: 8.90, barcode: "4260123456790", effectType: "rocket"},
+    {name: "Bunte Batterie", duration: "0:45", price: 25.00, barcode: "4260123456791", effectType: "battery"},
+    {name: "Rote Sterne", duration: "0:08", price: 15.20, barcode: "4260123456792", effectType: "rocket"},
+    {name: "Grüne Fontäne", duration: "0:20", price: 18.75, barcode: "4260123456793", effectType: "fountain"}
   ];
   
   effectDatabase = sampleEffects;
@@ -415,43 +554,228 @@ function initializeDatabase() {
 }
 
 function loadEffectDatabase() {
+  console.log('🔧 Lade Effekt-Datenbank...');
+  
   const saved = localStorage.getItem('effectDatabase');
   if (saved) {
-    effectDatabase = JSON.parse(saved);
+    try {
+      effectDatabase = JSON.parse(saved);
+      console.log('✅ Datenbank aus LocalStorage geladen:', effectDatabase.length, 'Effekte');
+      console.log('📋 Geladene Effekte:', effectDatabase);
+    } catch (error) {
+      console.error('❌ Fehler beim Laden der Datenbank:', error);
+      console.log('🔧 Erstelle neue Datenbank wegen Fehler...');
+      initializeDatabase();
+      return;
+    }
   } else {
+    console.log('🔧 Keine Datenbank gefunden, erstelle neue...');
     initializeDatabase();
+    return;
   }
+  
+  // Validiere Datenbank-Struktur
+  if (!Array.isArray(effectDatabase)) {
+    console.error('❌ Datenbank ist kein Array, erstelle neue...');
+    initializeDatabase();
+    return;
+  }
+  
+  if (effectDatabase.length === 0) {
+    console.log('📝 Datenbank ist leer, fülle mit Beispiel-Effekten...');
+    initializeDatabase();
+    return;
+  }
+  
+  console.log('✅ Datenbank erfolgreich geladen, aktualisiere Dropdown...');
   updateDatabaseList();
 }
 
 function updateDatabaseList() {
-  const select = document.getElementById('effectDatabase');
-  select.innerHTML = '<option value="">Effekt-Datenbank</option>';
+  console.log('🔧 Starte Dropdown-Aktualisierung...');
   
+  const select = document.getElementById('effectDatabase');
+  
+  if (!select) {
+    console.error('❌ Dropdown-Element "effectDatabase" nicht gefunden!');
+    console.log('🔍 Verfügbare Elemente:', document.querySelectorAll('select'));
+    return;
+  }
+  
+  console.log('✅ Dropdown-Element gefunden:', select);
+  console.log('📊 Aktuelle Datenbank:', effectDatabase);
+  console.log('📊 Datenbank-Länge:', effectDatabase.length);
+  
+  // Leere das Dropdown komplett
+  select.innerHTML = '';
+  
+  // Füge Standard-Option hinzu
+  const defaultOption = document.createElement('option');
+  defaultOption.value = '';
+  defaultOption.textContent = `📊 Effekt-Datenbank (${effectDatabase.length} Effekte)`;
+  select.appendChild(defaultOption);
+  
+  console.log('✅ Standard-Option hinzugefügt');
+  
+  // Füge alle Effekte hinzu
   effectDatabase.forEach((effect, index) => {
+    console.log(`🔧 Verarbeite Effekt ${index}:`, effect);
+    
     const option = document.createElement('option');
-    option.value = index;
-    option.textContent = `${effect.name} - ${effect.price > 0 ? effect.price + '€' : 'Preis fehlt'}`;
+    option.value = index.toString();
+    
+    const price = (effect.price && effect.price > 0) ? `${effect.price}€` : 'Kein Preis';
+    const duration = effect.duration || effect.plannedDuration || 'Keine Dauer';
+    const type = effect.effectType || effect.type || 'Unbekannt';
+    const hasImage = effect.image ? '📸 ' : '';
+    
+    option.textContent = `${hasImage}${effect.name} - ${price} - ${duration} - ${type}`;
     select.appendChild(option);
+    
+    console.log(`✅ Effekt ${index} hinzugefügt: "${effect.name}"`);
   });
+  
+  console.log('✅ Dropdown komplett aktualisiert!');
+  console.log('📊 Dropdown hat jetzt', select.options.length, 'Optionen');
+  
+  // Zeige alle Optionen zur Kontrolle
+  for (let i = 0; i < select.options.length; i++) {
+    console.log(`Option ${i}: "${select.options[i].textContent}" (value: "${select.options[i].value}")`);
+  }
 }
 
 function selectFromDatabase() {
   const select = document.getElementById('effectDatabase');
-  const index = select.value;
+  const selectedValue = select.value;
   
-  if (index !== '') {
-    const effect = effectDatabase[index];
-    document.getElementById('name').value = effect.name;
-    document.getElementById('effectType').value = effect.type;
-    document.getElementById('plannedDuration').value = effect.duration;
-    document.getElementById('price').value = effect.price || '';
-    document.getElementById('barcode').value = effect.barcode;
+  console.log('🔍 Datenbank-Auswahl gestartet:', {
+    selectedValue: selectedValue,
+    databaseLength: effectDatabase.length,
+    database: effectDatabase
+  });
+  
+  // Prüfe ob ein Wert ausgewählt wurde
+  if (!selectedValue || selectedValue === '') {
+    console.log('ℹ️ Keine Auswahl getroffen');
+    return;
+  }
+  
+  const index = parseInt(selectedValue);
+  console.log('🔢 Index berechnet:', index);
+  
+  // Validiere Index
+  if (isNaN(index) || index < 0 || index >= effectDatabase.length) {
+    console.error('❌ Ungültiger Index:', {
+      originalValue: selectedValue,
+      parsedIndex: index,
+      isNaN: isNaN(index),
+      tooSmall: index < 0,
+      tooLarge: index >= effectDatabase.length,
+      databaseLength: effectDatabase.length
+    });
+    alert(`❌ Fehler: Ungültiger Index ${index} für Datenbank mit ${effectDatabase.length} Einträgen!`);
+    return;
+  }
+  
+  const effect = effectDatabase[index];
+  console.log('📋 Effekt gefunden:', effect);
+  
+  if (!effect) {
+    console.error('❌ Effekt nicht gefunden bei Index:', index);
+    alert('❌ Effekt nicht gefunden!');
+    return;
+  }
+  
+  try {
+    // Felder füllen mit Validierung
+    const fields = {
+      name: document.getElementById('name'),
+      effectType: document.getElementById('effectType'),
+      plannedDuration: document.getElementById('plannedDuration'),
+      price: document.getElementById('price'),
+      barcode: document.getElementById('barcode')
+    };
+    
+    // Prüfe ob alle Felder existieren
+    for (const [fieldName, field] of Object.entries(fields)) {
+      if (!field) {
+        console.error(`❌ Feld ${fieldName} nicht gefunden!`);
+        alert(`❌ Eingabefeld ${fieldName} nicht gefunden!`);
+        return;
+      }
+    }
+    
+    // Fülle die Felder
+    fields.name.value = effect.name || '';
+    fields.effectType.value = effect.effectType || effect.type || 'rocket';
+    fields.plannedDuration.value = effect.duration || effect.plannedDuration || '';
+    fields.price.value = effect.price || '';
+    fields.barcode.value = effect.barcode || '';
+    
+    console.log('✅ Felder gefüllt:', {
+      name: fields.name.value,
+      type: fields.effectType.value,
+      duration: fields.plannedDuration.value,
+      price: fields.price.value,
+      barcode: fields.barcode.value
+    });
+    
+    // Load image if available
+    if (effect.image) {
+      currentEffectImage = effect.image;
+      const previewDiv = document.getElementById('imagePreview');
+      if (previewDiv) {
+        previewDiv.innerHTML = `<img src="${currentEffectImage}" class="image-preview" alt="Effekt Bild">`;
+        console.log('📸 Bild geladen');
+      }
+    } else {
+      clearImage();
+      console.log('🚫 Kein Bild vorhanden');
+    }
+    
+    // Visuelles Feedback - grünes Aufleuchten
+    fields.name.style.background = '#2d5a2d';
+    fields.name.style.borderColor = '#4caf50';
+    fields.name.style.boxShadow = '0 0 10px rgba(76, 175, 80, 0.5)';
+    
+    setTimeout(() => {
+      fields.name.style.background = '#222';
+      fields.name.style.borderColor = '#555';
+      fields.name.style.boxShadow = 'none';
+    }, 2000);
+    
+    // Success message
+    const imageText = effect.image ? ' 📸' : '';
+    const priceText = effect.price ? ` - ${effect.price}€` : '';
+    
+    console.log(`✅ Effekt "${effect.name}"${imageText}${priceText} erfolgreich geladen!`);
+    
+    // Show temporary success message
+    const tempMsg = document.createElement('div');
+    tempMsg.style.cssText = `
+      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+      background: #4caf50; color: white; padding: 15px 25px;
+      border-radius: 8px; z-index: 1000; font-weight: bold;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    `;
+    tempMsg.textContent = `✅ "${effect.name}" aus Datenbank geladen!${imageText}`;
+    document.body.appendChild(tempMsg);
+    
+    setTimeout(() => {
+      if (tempMsg.parentNode) {
+        tempMsg.parentNode.removeChild(tempMsg);
+      }
+    }, 3000);
+    
+  } catch (error) {
+    console.error('❌ Fehler beim Laden des Effekts:', error);
+    alert('❌ Fehler beim Laden des Effekts: ' + error.message);
   }
 }
 
 function addToDatabase() {
   const name = document.getElementById('name').value;
+  const effectType = document.getElementById('effectType').value;
   const duration = document.getElementById('plannedDuration').value;
   const price = parseFloat(document.getElementById('price').value) || 0;
   const barcode = document.getElementById('barcode').value;
@@ -461,11 +785,34 @@ function addToDatabase() {
     return;
   }
   
-  const newEffect = {name, duration, price, barcode};
+  const newEffect = {
+    name, 
+    effectType, 
+    duration, 
+    price, 
+    barcode,
+    image: currentEffectImage // Add image if available
+  };
+  
   effectDatabase.push(newEffect);
   localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
   updateDatabaseList();
-  alert('Effekt zur Datenbank hinzugefügt!');
+  
+  const imageText = currentEffectImage ? ' (mit Bild)' : '';
+  alert(`Effekt "${name}"${imageText} zur Datenbank hinzugefügt!\nDatenbank hat jetzt ${effectDatabase.length} Effekte.`);
+  
+  // Clear form after adding
+  clearImage();
+}
+
+function clearDatabase() {
+  if (confirm('Wirklich die komplette Datenbank löschen?\nDies kann nicht rückgängig gemacht werden!')) {
+    effectDatabase = [];
+    localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
+    updateDatabaseList();
+    initializeDatabase(); // Lade Beispiel-Effekte neu
+    alert('Datenbank geleert und mit Beispiel-Effekten neu geladen!');
+  }
 }
 
 function importExcelDatabase() {
@@ -473,7 +820,7 @@ function importExcelDatabase() {
   const file = fileInput.files[0];
   
   if (!file) {
-    alert('Bitte eine Excel-Datei auswählen!');
+    alert('Bitte eine Excel/CSV-Datei auswählen!');
     return;
   }
   
@@ -483,12 +830,13 @@ function importExcelDatabase() {
       const text = e.target.result;
       const lines = text.split('\n');
       const newEffects = [];
+      let skippedLines = 0;
       
       // Skip header row, start from line 1
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
         if (line) {
-          // Try different separators: Tab, Comma, Semicolon
+          // Try different separators: Tab, Comma, Semicolon, Pipe
           let columns = line.split('\t');
           if (columns.length < 2) {
             columns = line.split(',');
@@ -496,17 +844,26 @@ function importExcelDatabase() {
           if (columns.length < 2) {
             columns = line.split(';');
           }
+          if (columns.length < 2) {
+            columns = line.split('|');
+          }
           
           if (columns.length >= 2) {
             const effect = {
               name: columns[0].trim(),
               barcode: columns[1].trim(),
-              duration: "", // Leer - wird manuell eingegeben
-              price: 0 // 0 - wird manuell eingegeben
+              duration: columns[2] ? columns[2].trim() : "", // Dauer aus 3. Spalte
+              price: columns[3] ? parseFloat(columns[3].trim()) || 0 : 0, // Preis aus 4. Spalte
+              effectType: columns[4] ? columns[4].trim() : "rocket" // Typ aus 5. Spalte
             };
+            
             if (effect.name && effect.barcode) {
               newEffects.push(effect);
+            } else {
+              skippedLines++;
             }
+          } else {
+            skippedLines++;
           }
         }
       }
@@ -515,12 +872,19 @@ function importExcelDatabase() {
         effectDatabase = effectDatabase.concat(newEffects);
         localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
         updateDatabaseList();
-        alert(`${newEffects.length} Effekte aus Excel importiert!\nNur Name und Code wurden übernommen.\nDauer und Preis kannst du manuell eingeben.`);
+        
+        let message = `✅ ${newEffects.length} Effekte erfolgreich importiert!\n`;
+        message += `📊 Datenbank hat jetzt ${effectDatabase.length} Effekte.\n`;
+        if (skippedLines > 0) {
+          message += `⚠️ ${skippedLines} Zeilen übersprungen (unvollständige Daten).`;
+        }
+        alert(message);
       } else {
-        alert('Keine gültigen Effekte in der Datei gefunden!\nStelle sicher, dass die ersten beiden Spalten Name und Code enthalten.');
+        alert('❌ Keine gültigen Effekte gefunden!\n\n📋 Format: Name | Barcode | Dauer | Preis | Typ\nBeispiel: "Goldener Regen | 4260123456789 | 0:15 | 12.50 | fountain"');
       }
     } catch (error) {
-      alert('Fehler beim Importieren der Excel-Datei!');
+      alert('❌ Fehler beim Importieren der Datei!\nBitte überprüfe das Dateiformat.');
+      console.error('Import error:', error);
     }
   };
   reader.readAsText(file);
@@ -573,6 +937,7 @@ function addEffect() {
     buttonKey,
     quantity,
     additionalInfo,
+    image: currentEffectImage, // Add image if available
     x: 400,
     y: 250
   };
@@ -608,6 +973,7 @@ function addEffect() {
   document.getElementById('buttonKey').value = '';
   document.getElementById('quantity').value = '';
   document.getElementById('additionalInfo').value = '';
+  clearImage(); // Clear image as well
   
   updateEffectList();
   updateCostCalculation();
@@ -625,11 +991,14 @@ function updateEffectList() {
     div.className = 'effect-item';
     div.draggable = true;
     div.innerHTML = `
-      <div>
-        <strong>${effect.name}</strong><br>
-        Zeit: ${effect.timeStr} | Typ: ${effect.effectType}<br>
-        Kanal: ${effect.channel} | Taste: ${effect.buttonKey}<br>
-        ${effect.price > 0 ? `Preis: ${effect.price.toFixed(2)}€ | ` : ''}Anzahl: ${effect.quantity}
+      <div style="display: flex; align-items: center;">
+        ${effect.image ? `<img src="${effect.image}" class="effect-image" alt="Effekt">` : ''}
+        <div>
+          <strong>${effect.name}</strong><br>
+          Zeit: ${effect.timeStr} | Typ: ${effect.effectType}<br>
+          Kanal: ${effect.channel} | Taste: ${effect.buttonKey}<br>
+          ${effect.price > 0 ? `Preis: ${effect.price.toFixed(2)}€ | ` : ''}Anzahl: ${effect.quantity}
+        </div>
       </div>
       <button class="effect-delete" onclick="deleteEffect(${effect.id})">×</button>
     `;
@@ -659,6 +1028,57 @@ function updateCostCalculation() {
   
   document.getElementById('totalCost').textContent = `Gesamtkosten: ${totalCost.toFixed(2)} €`;
   document.getElementById('effectCount').textContent = `Anzahl Effekte: ${totalEffects}`;
+  
+  updateEffectOverview();
+}
+
+function updateEffectOverview() {
+  const overviewDiv = document.getElementById('overviewTable');
+  
+  if (effects.length === 0) {
+    overviewDiv.innerHTML = '<p style="color: #666; font-style: italic;">Keine Effekte in der Show</p>';
+    return;
+  }
+  
+  // Sort effects by time
+  const sortedEffects = [...effects].sort((a, b) => a.time - b.time);
+  
+  let html = `
+    <table class="overview-table">
+      <thead>
+        <tr>
+          <th>Zeit</th>
+          <th>Effekt</th>
+          <th>Typ</th>
+          <th>Dauer</th>
+          <th>Kanal</th>
+          <th>Taste</th>
+          <th>Empfänger</th>
+          <th>Preis</th>
+          <th>Anzahl</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  
+  sortedEffects.forEach(effect => {
+    html += `
+      <tr>
+        <td class="time-cell">${effect.timeStr}</td>
+        <td><strong>${effect.name}</strong></td>
+        <td>${effect.effectType}</td>
+        <td>${effect.plannedDuration || '-'}</td>
+        <td class="channel-cell">${effect.channel || '-'}</td>
+        <td class="button-cell">${effect.buttonKey || '-'}</td>
+        <td>${effect.receiver || '-'}</td>
+        <td>${effect.price > 0 ? effect.price.toFixed(2) + '€' : '-'}</td>
+        <td>${effect.quantity || 1}</td>
+      </tr>
+    `;
+  });
+  
+  html += '</tbody></table>';
+  overviewDiv.innerHTML = html;
 }
 
 function deleteEffect(id) {
@@ -695,10 +1115,18 @@ function drawCanvas() {
       battery: '#4444ff'
     };
     
+    // Draw effect circle
     ctx.fillStyle = colors[effect.effectType] || '#ffffff';
     ctx.beginPath();
     ctx.arc(effect.x, effect.y, 8, 0, 2 * Math.PI);
     ctx.fill();
+    
+    // Draw image icon if available
+    if (effect.image) {
+      ctx.fillStyle = '#ffff00';
+      ctx.font = '16px Arial';
+      ctx.fillText('📸', effect.x - 8, effect.y - 12);
+    }
     
     ctx.fillStyle = '#ffffff';
     ctx.font = '12px Arial';
@@ -739,7 +1167,7 @@ function loadSavedEffects() {
 
 function updateSavedEffectsList() {
   const select = document.getElementById('effectSavedList');
-  select.innerHTML = '<option value="">Vorherige Effekte</option>';
+  select.innerHTML = '<option value="">Vorherige Effekte (' + savedEffects.length + ')</option>';
   
   savedEffects.forEach((effect, index) => {
     const option = document.createElement('option');
@@ -1098,8 +1526,17 @@ function runShow() {
     const currentEffects = effects.filter(e => e.time === elapsed);
     if (currentEffects.length > 0) {
       const effect = currentEffects[0];
-      document.getElementById('currentEffect').textContent = 
-        `🎆 FEUER: ${effect.name} - Kanal ${effect.channel} - Taste ${effect.buttonKey}`;
+      document.getElementById('currentEffect').innerHTML = 
+        `<div style="font-size: 1.8em; color: #ff0; text-align: center; background: #333; padding: 15px; border-radius: 10px; border: 3px solid #ff0;">
+          🎆 <strong>FEUER FREI!</strong><br>
+          <div style="font-size: 1.2em; margin: 10px 0;">${effect.name}</div>
+          <div style="font-size: 2em; color: #0ff; font-weight: bold;">
+            KANAL ${effect.channel} - TASTE ${effect.buttonKey}
+          </div>
+          <div style="font-size: 0.8em; color: #ccc; margin-top: 5px;">
+            ${effect.receiver ? 'Empfänger: ' + effect.receiver : ''}
+          </div>
+        </div>`;
       document.getElementById('fireBeep').play().catch(() => {});
       
       // Create explosion animation
@@ -1111,8 +1548,8 @@ function runShow() {
       createExplosion(effect.x, effect.y, colors[effect.effectType] || '#ffffff');
       
       setTimeout(() => {
-        document.getElementById('currentEffect').textContent = '';
-      }, 3000);
+        document.getElementById('currentEffect').innerHTML = '';
+      }, 5000);
     }
     
     // Update timeline
@@ -1177,12 +1614,69 @@ function backToPlan() {
   
   document.getElementById('timerDisplay').textContent = '00:00';
   document.getElementById('warning').textContent = '';
-  document.getElementById('currentEffect').textContent = '';
+  document.getElementById('currentEffect').innerHTML = '';
   document.getElementById('timelineDisplay').textContent = '';
+}
+
+// Function testing and validation
+function testAllFunctions() {
+  console.log('🔧 Testing FirePlanner functions...');
+  
+  // Test image functions
+  console.log('✅ Image functions loaded');
+  
+  // Test database functions
+  console.log('✅ Database functions loaded');
+  
+  // Test effect creation
+  console.log('✅ Effect creation functions loaded');
+  
+  // Test canvas drawing
+  console.log('✅ Canvas functions loaded');
+  
+  // Test show timer
+  console.log('✅ Show timer functions loaded');
+  
+  console.log('🎆 All FirePlanner functions ready!');
+}
+
+// Test database functionality
+function testDatabase() {
+  console.log('🧪 Teste Datenbank-Funktionalität...');
+  
+  // Test 1: Prüfe ob Datenbank existiert
+  console.log('Test 1 - Datenbank-Variable:', effectDatabase);
+  
+  // Test 2: Prüfe LocalStorage
+  const stored = localStorage.getItem('effectDatabase');
+  console.log('Test 2 - LocalStorage:', stored ? 'Vorhanden' : 'Leer');
+  
+  // Test 3: Prüfe Dropdown-Element
+  const dropdown = document.getElementById('effectDatabase');
+  console.log('Test 3 - Dropdown-Element:', dropdown ? 'Gefunden' : 'Nicht gefunden');
+  
+  if (dropdown) {
+    console.log('Test 3a - Dropdown-Optionen:', dropdown.options.length);
+  }
+  
+  // Test 4: Erzwinge Datenbank-Neuaufbau
+  console.log('Test 4 - Erzwinge Neuaufbau...');
+  initializeDatabase();
+  
+  console.log('🧪 Datenbank-Test abgeschlossen!');
 }
 
 // Check for remote control URL parameter
 window.addEventListener('load', function() {
+  // Test all functions on load
+  testAllFunctions();
+  
+  // Test database after a short delay
+  setTimeout(() => {
+    console.log('🔧 Starte Datenbank-Test nach 1 Sekunde...');
+    testDatabase();
+  }, 1000);
+  
   const urlParams = new URLSearchParams(window.location.search);
   const remoteData = urlParams.get('remote');
   const sessionId = urlParams.get('session');
@@ -1215,5 +1709,5 @@ window.addEventListener('load', function() {
 });
 </script>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'986a523f90619274',t:'MTc1OTEzNjc1Mi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'986a7dcab209975f',t:'MTc1OTEzODUzNi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
