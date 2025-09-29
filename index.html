@@ -568,6 +568,18 @@ function loadEffectDatabase() {
       effectDatabase = JSON.parse(saved);
       console.log('✅ Datenbank aus LocalStorage geladen:', effectDatabase.length, 'Effekte');
       console.log('📋 Geladene Effekte:', effectDatabase);
+      
+      // Validiere Datenbank-Struktur
+      if (!Array.isArray(effectDatabase)) {
+        console.error('❌ Datenbank ist kein Array, erstelle neue...');
+        initializeDatabase();
+        return;
+      }
+      
+      // Auch leere Datenbank ist gültig - nicht überschreiben!
+      console.log('✅ Datenbank erfolgreich geladen, aktualisiere Dropdown...');
+      updateDatabaseList();
+      
     } catch (error) {
       console.error('❌ Fehler beim Laden der Datenbank:', error);
       console.log('🔧 Erstelle neue Datenbank wegen Fehler...');
@@ -579,22 +591,6 @@ function loadEffectDatabase() {
     initializeDatabase();
     return;
   }
-  
-  // Validiere Datenbank-Struktur
-  if (!Array.isArray(effectDatabase)) {
-    console.error('❌ Datenbank ist kein Array, erstelle neue...');
-    initializeDatabase();
-    return;
-  }
-  
-  if (effectDatabase.length === 0) {
-    console.log('📝 Datenbank ist leer, fülle mit Beispiel-Effekten...');
-    initializeDatabase();
-    return;
-  }
-  
-  console.log('✅ Datenbank erfolgreich geladen, aktualisiere Dropdown...');
-  updateDatabaseList();
 }
 
 function updateDatabaseList() {
@@ -608,6 +604,12 @@ function updateDatabaseList() {
   }
   
   console.log(`📊 Aktualisiere Dropdown mit ${effectDatabase.length} Effekten`);
+  
+  // Zeige aktuellen Datenbank-Status in der Konsole
+  console.log('📋 Aktuelle Datenbank-Inhalte:');
+  effectDatabase.forEach((effect, index) => {
+    console.log(`${index + 1}. ${effect.name} - ${effect.price || 0}€ - ${effect.barcode || 'Kein Barcode'}`);
+  });
   
   // Performance-optimierte Aktualisierung für große Datenbanken
   if (effectDatabase.length > 100) {
@@ -831,11 +833,39 @@ function addToDatabase() {
     duration, 
     price, 
     barcode,
-    image: currentEffectImage // Add image if available
+    image: currentEffectImage, // Add image if available
+    addedDate: new Date().toISOString() // Zeitstempel hinzufügen
   };
   
+  console.log('💾 Füge Effekt zur Datenbank hinzu:', newEffect);
+  
   effectDatabase.push(newEffect);
-  localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
+  
+  // Speichere mit Validierung
+  try {
+    localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
+    console.log('✅ Effekt erfolgreich gespeichert. Datenbank hat jetzt', effectDatabase.length, 'Effekte');
+    
+    // Verifikation der Speicherung
+    const verification = localStorage.getItem('effectDatabase');
+    if (verification) {
+      const parsed = JSON.parse(verification);
+      console.log('✅ Speicherung verifiziert:', parsed.length, 'Effekte');
+      
+      // Prüfe ob der neue Effekt wirklich drin ist
+      const lastEffect = parsed[parsed.length - 1];
+      if (lastEffect && lastEffect.name === name) {
+        console.log('✅ Neuer Effekt erfolgreich in Datenbank:', lastEffect.name);
+      } else {
+        console.error('❌ Neuer Effekt nicht in gespeicherter Datenbank gefunden!');
+      }
+    }
+  } catch (error) {
+    console.error('❌ Fehler beim Speichern des Effekts:', error);
+    alert('❌ Fehler beim Speichern! Möglicherweise ist der Browser-Speicher voll.');
+    return;
+  }
+  
   updateDatabaseList();
   
   const imageText = currentEffectImage ? ' (mit Bild)' : '';
@@ -942,8 +972,22 @@ function importExcelDatabase() {
         const oldCount = effectDatabase.length;
         effectDatabase = effectDatabase.concat(newEffects);
         
-        // Speichere in LocalStorage
-        localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
+        // Speichere in LocalStorage mit Validierung
+        try {
+          localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
+          console.log('💾 Datenbank erfolgreich gespeichert:', effectDatabase.length, 'Effekte');
+          
+          // Verifikation der Speicherung
+          const verification = localStorage.getItem('effectDatabase');
+          if (verification) {
+            const parsed = JSON.parse(verification);
+            console.log('✅ Speicherung verifiziert:', parsed.length, 'Effekte');
+          }
+        } catch (error) {
+          console.error('❌ Fehler beim Speichern der Datenbank:', error);
+          alert('❌ Fehler beim Speichern der Datenbank! Möglicherweise ist der Speicher voll.');
+          return;
+        }
         
         // Aktualisiere UI
         updateDatabaseList();
@@ -1859,5 +1903,5 @@ window.addEventListener('load', function() {
 });
 </script>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'986a926eb3d7d2ca',t:'MTc1OTEzOTM4MS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'986ab71147750b0c',t:'MTc1OTE0MDg4Mi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
