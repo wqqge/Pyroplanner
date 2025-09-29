@@ -346,9 +346,15 @@ button:hover {
 <select id="effectSavedList" onchange="selectSavedEffect()">
   <option value="">Vorherige Effekte</option>
 </select>
-<select id="effectDatabase" onchange="selectFromDatabase()">
-  <option value="">Effekt-Datenbank</option>
-</select><br>
+<div style="position: relative; display: inline-block;">
+  <select id="effectDatabase" onchange="selectFromDatabase()">
+    <option value="">Effekt-Datenbank</option>
+  </select>
+  <input type="text" id="effectSearch" placeholder="🔍 Effekt suchen..." 
+         style="display: none; position: absolute; top: 0; left: 0; width: 100%; z-index: 10;"
+         onkeyup="searchEffects()" onblur="hideSearch()">
+</div>
+<button onclick="showSearch()" id="searchButton" style="display: none;">🔍 Suchen</button><br>
 
 <div class="database-info">
   📊 <strong>Excel-Import Format:</strong> Name | Barcode | Dauer | Preis | Typ<br>
@@ -598,50 +604,84 @@ function updateDatabaseList() {
   
   if (!select) {
     console.error('❌ Dropdown-Element "effectDatabase" nicht gefunden!');
-    console.log('🔍 Verfügbare Elemente:', document.querySelectorAll('select'));
     return;
   }
   
-  console.log('✅ Dropdown-Element gefunden:', select);
-  console.log('📊 Aktuelle Datenbank:', effectDatabase);
-  console.log('📊 Datenbank-Länge:', effectDatabase.length);
+  console.log(`📊 Aktualisiere Dropdown mit ${effectDatabase.length} Effekten`);
   
-  // Leere das Dropdown komplett
-  select.innerHTML = '';
-  
-  // Füge Standard-Option hinzu
-  const defaultOption = document.createElement('option');
-  defaultOption.value = '';
-  defaultOption.textContent = `📊 Effekt-Datenbank (${effectDatabase.length} Effekte)`;
-  select.appendChild(defaultOption);
-  
-  console.log('✅ Standard-Option hinzugefügt');
-  
-  // Füge alle Effekte hinzu
-  effectDatabase.forEach((effect, index) => {
-    console.log(`🔧 Verarbeite Effekt ${index}:`, effect);
+  // Performance-optimierte Aktualisierung für große Datenbanken
+  if (effectDatabase.length > 100) {
+    console.log('⚡ Verwende Performance-Modus für große Datenbank');
     
-    const option = document.createElement('option');
-    option.value = index.toString();
+    // Zeige Suchbutton für große Datenbanken
+    const searchButton = document.getElementById('searchButton');
+    if (searchButton) {
+      searchButton.style.display = 'inline-block';
+    }
     
-    const price = (effect.price && effect.price > 0) ? `${effect.price}€` : 'Kein Preis';
-    const duration = effect.duration || effect.plannedDuration || 'Keine Dauer';
-    const type = effect.effectType || effect.type || 'Unbekannt';
-    const hasImage = effect.image ? '📸 ' : '';
+    // Leere das Dropdown
+    select.innerHTML = '';
     
-    option.textContent = `${hasImage}${effect.name} - ${price} - ${duration} - ${type}`;
-    select.appendChild(option);
+    // Standard-Option
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = `📊 Datenbank (${effectDatabase.length} Effekte) - Suchbutton nutzen`;
+    select.appendChild(defaultOption);
     
-    console.log(`✅ Effekt ${index} hinzugefügt: "${effect.name}"`);
-  });
-  
-  console.log('✅ Dropdown komplett aktualisiert!');
-  console.log('📊 Dropdown hat jetzt', select.options.length, 'Optionen');
-  
-  // Zeige alle Optionen zur Kontrolle
-  for (let i = 0; i < select.options.length; i++) {
-    console.log(`Option ${i}: "${select.options[i].textContent}" (value: "${select.options[i].value}")`);
+    // Nur erste 20 Effekte laden für bessere Performance
+    const maxDisplay = Math.min(20, effectDatabase.length);
+    
+    for (let i = 0; i < maxDisplay; i++) {
+      const effect = effectDatabase[i];
+      const option = document.createElement('option');
+      option.value = i.toString();
+      
+      // Sehr kurze Anzeige für Performance
+      const price = (effect.price && effect.price > 0) ? ` ${effect.price}€` : '';
+      const shortName = effect.name.length > 20 ? effect.name.substring(0, 20) + '...' : effect.name;
+      
+      option.textContent = `${shortName}${price}`;
+      dropdown.appendChild(option);
+    }
+    
+    if (effectDatabase.length > maxDisplay) {
+      const moreOption = document.createElement('option');
+      moreOption.value = 'search';
+      moreOption.textContent = `... ${effectDatabase.length - maxDisplay} weitere → Suchbutton nutzen`;
+      moreOption.disabled = true;
+      select.appendChild(moreOption);
+    }
+    
+  } else {
+    // Normale Aktualisierung für kleinere Datenbanken
+    // Verstecke Suchbutton für kleine Datenbanken
+    const searchButton = document.getElementById('searchButton');
+    if (searchButton) {
+      searchButton.style.display = 'none';
+    }
+    
+    select.innerHTML = '';
+    
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = `📊 Effekt-Datenbank (${effectDatabase.length} Effekte)`;
+    select.appendChild(defaultOption);
+    
+    effectDatabase.forEach((effect, index) => {
+      const option = document.createElement('option');
+      option.value = index.toString();
+      
+      const price = (effect.price && effect.price > 0) ? `${effect.price}€` : '';
+      const duration = effect.duration || effect.plannedDuration || '';
+      const type = effect.effectType || effect.type || '';
+      const hasImage = effect.image ? '📸 ' : '';
+      
+      option.textContent = `${hasImage}${effect.name} ${price ? '- ' + price : ''} ${duration ? '- ' + duration : ''} ${type ? '- ' + type : ''}`;
+      select.appendChild(option);
+    });
   }
+  
+  console.log('✅ Dropdown aktualisiert!');
 }
 
 function selectFromDatabase() {
@@ -1666,6 +1706,72 @@ function testDatabase() {
   console.log('🧪 Datenbank-Test abgeschlossen!');
 }
 
+// Search functions for large databases
+function showSearch() {
+  const searchInput = document.getElementById('effectSearch');
+  const dropdown = document.getElementById('effectDatabase');
+  
+  if (searchInput && dropdown) {
+    searchInput.style.display = 'block';
+    dropdown.style.display = 'none';
+    searchInput.focus();
+    searchInput.value = '';
+  }
+}
+
+function hideSearch() {
+  setTimeout(() => {
+    const searchInput = document.getElementById('effectSearch');
+    const dropdown = document.getElementById('effectDatabase');
+    
+    if (searchInput && dropdown) {
+      searchInput.style.display = 'none';
+      dropdown.style.display = 'block';
+    }
+  }, 200);
+}
+
+function searchEffects() {
+  const searchTerm = document.getElementById('effectSearch').value.toLowerCase();
+  const dropdown = document.getElementById('effectDatabase');
+  
+  if (!searchTerm || searchTerm.length < 2) {
+    return;
+  }
+  
+  // Suche in der Datenbank
+  const matches = effectDatabase.filter((effect, index) => {
+    const searchText = `${effect.name} ${effect.barcode || ''} ${effect.effectType || ''}`.toLowerCase();
+    return searchText.includes(searchTerm);
+  }).slice(0, 20); // Maximal 20 Ergebnisse
+  
+  if (matches.length > 0) {
+    // Zeige Suchergebnisse
+    dropdown.innerHTML = '';
+    
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = `🔍 ${matches.length} Ergebnisse für "${searchTerm}"`;
+    dropdown.appendChild(defaultOption);
+    
+    matches.forEach(effect => {
+      const index = effectDatabase.indexOf(effect);
+      const option = document.createElement('option');
+      option.value = index.toString();
+      
+      const price = (effect.price && effect.price > 0) ? ` ${effect.price}€` : '';
+      const shortName = effect.name.length > 25 ? effect.name.substring(0, 25) + '...' : effect.name;
+      
+      option.textContent = `${shortName}${price}`;
+      dropdown.appendChild(option);
+    });
+    
+    // Zeige Dropdown mit Ergebnissen
+    document.getElementById('effectSearch').style.display = 'none';
+    dropdown.style.display = 'block';
+  }
+}
+
 // Check for remote control URL parameter
 window.addEventListener('load', function() {
   // Test all functions on load
@@ -1709,5 +1815,5 @@ window.addEventListener('load', function() {
 });
 </script>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'986a7dcab209975f',t:'MTc1OTEzODUzNi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'986a865f83b5dbfa',t:'MTc1OTEzODg4Ny4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
