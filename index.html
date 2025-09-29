@@ -641,7 +641,7 @@ function updateDatabaseList() {
       const shortName = effect.name.length > 20 ? effect.name.substring(0, 20) + '...' : effect.name;
       
       option.textContent = `${shortName}${price}`;
-      dropdown.appendChild(option);
+      select.appendChild(option);
     }
     
     if (effectDatabase.length > maxDisplay) {
@@ -864,6 +864,8 @@ function importExcelDatabase() {
     return;
   }
   
+  console.log('📊 Starte Excel-Import...');
+  
   const reader = new FileReader();
   reader.onload = function(e) {
     try {
@@ -871,63 +873,105 @@ function importExcelDatabase() {
       const lines = text.split('\n');
       const newEffects = [];
       let skippedLines = 0;
+      let processedLines = 0;
       
-      // Skip header row, start from line 1
-      for (let i = 1; i < lines.length; i++) {
+      console.log(`📋 Verarbeite ${lines.length} Zeilen...`);
+      
+      // Verarbeite alle Zeilen (auch erste Zeile falls keine Überschrift)
+      for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
         if (line) {
-          // Try different separators: Tab, Comma, Semicolon, Pipe
-          let columns = line.split('\t');
-          if (columns.length < 2) {
-            columns = line.split(',');
-          }
-          if (columns.length < 2) {
+          processedLines++;
+          
+          // Versuche verschiedene Trennzeichen: Tab, Semikolon, Komma, Pipe
+          let columns = [];
+          
+          if (line.includes('\t')) {
+            columns = line.split('\t');
+          } else if (line.includes(';')) {
             columns = line.split(';');
-          }
-          if (columns.length < 2) {
+          } else if (line.includes('|')) {
             columns = line.split('|');
+          } else if (line.includes(',')) {
+            columns = line.split(',');
+          } else {
+            // Fallback: Leerzeichen als Trenner
+            columns = line.split(/\s+/);
           }
           
+          // Bereinige Spalten von Anführungszeichen
+          columns = columns.map(col => col.trim().replace(/^["']|["']$/g, ''));
+          
+          console.log(`Zeile ${i + 1}: ${columns.length} Spalten:`, columns);
+          
           if (columns.length >= 2) {
+            // Überspringe Kopfzeilen (enthalten oft "Name", "Barcode", etc.)
+            const firstCol = columns[0].toLowerCase();
+            if (firstCol.includes('name') || firstCol.includes('effekt') || firstCol.includes('artikel')) {
+              console.log(`Überspringe Kopfzeile: ${columns[0]}`);
+              continue;
+            }
+            
             const effect = {
-              name: columns[0].trim(),
-              barcode: columns[1].trim(),
-              duration: columns[2] ? columns[2].trim() : "", // Dauer aus 3. Spalte
-              price: columns[3] ? parseFloat(columns[3].trim()) || 0 : 0, // Preis aus 4. Spalte
-              effectType: columns[4] ? columns[4].trim() : "rocket" // Typ aus 5. Spalte
+              name: columns[0] || `Effekt ${newEffects.length + 1}`,
+              barcode: columns[1] || '',
+              duration: columns[2] || '',
+              price: columns[3] ? parseFloat(columns[3].replace(',', '.')) || 0 : 0,
+              effectType: columns[4] || 'rocket'
             };
             
-            if (effect.name && effect.barcode) {
+            // Validiere Mindestanforderungen
+            if (effect.name && effect.name.length > 0) {
               newEffects.push(effect);
+              console.log(`✅ Effekt hinzugefügt: ${effect.name}`);
             } else {
               skippedLines++;
+              console.log(`❌ Zeile übersprungen: Kein Name`);
             }
           } else {
             skippedLines++;
+            console.log(`❌ Zeile übersprungen: Zu wenige Spalten (${columns.length})`);
           }
         }
       }
       
+      console.log(`📊 Import-Ergebnis: ${newEffects.length} neue Effekte, ${skippedLines} übersprungen`);
+      
       if (newEffects.length > 0) {
+        // Füge neue Effekte zur bestehenden Datenbank hinzu
+        const oldCount = effectDatabase.length;
         effectDatabase = effectDatabase.concat(newEffects);
+        
+        // Speichere in LocalStorage
         localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
+        
+        // Aktualisiere UI
         updateDatabaseList();
         
         let message = `✅ ${newEffects.length} Effekte erfolgreich importiert!\n`;
-        message += `📊 Datenbank hat jetzt ${effectDatabase.length} Effekte.\n`;
+        message += `📊 Datenbank: ${oldCount} → ${effectDatabase.length} Effekte\n`;
         if (skippedLines > 0) {
-          message += `⚠️ ${skippedLines} Zeilen übersprungen (unvollständige Daten).`;
+          message += `⚠️ ${skippedLines} von ${processedLines} Zeilen übersprungen`;
         }
+        
         alert(message);
+        
+        // Zeige erste paar importierte Effekte zur Kontrolle
+        console.log('🎆 Erste importierte Effekte:');
+        newEffects.slice(0, 5).forEach((effect, i) => {
+          console.log(`${i + 1}. ${effect.name} - ${effect.price}€ - ${effect.barcode}`);
+        });
+        
       } else {
-        alert('❌ Keine gültigen Effekte gefunden!\n\n📋 Format: Name | Barcode | Dauer | Preis | Typ\nBeispiel: "Goldener Regen | 4260123456789 | 0:15 | 12.50 | fountain"');
+        alert(`❌ Keine gültigen Effekte gefunden!\n\n📋 Verarbeitete Zeilen: ${processedLines}\n⚠️ Übersprungene Zeilen: ${skippedLines}\n\n💡 Format-Beispiele:\n• Name;Barcode;Dauer;Preis;Typ\n• Name|Barcode|Dauer|Preis|Typ\n• Name,Barcode,Dauer,Preis,Typ`);
       }
     } catch (error) {
-      alert('❌ Fehler beim Importieren der Datei!\nBitte überprüfe das Dateiformat.');
-      console.error('Import error:', error);
+      console.error('❌ Import-Fehler:', error);
+      alert(`❌ Fehler beim Importieren der Datei!\n\nFehler: ${error.message}\n\n💡 Tipps:\n• Datei als UTF-8 speichern\n• Trennzeichen: ; | , oder Tab\n• Mindestens Name und Barcode`);
     }
   };
-  reader.readAsText(file);
+  
+  reader.readAsText(file, 'UTF-8');
 }
 
 function parseTime(timeStr) {
@@ -1763,7 +1807,7 @@ function searchEffects() {
       const shortName = effect.name.length > 25 ? effect.name.substring(0, 25) + '...' : effect.name;
       
       option.textContent = `${shortName}${price}`;
-      dropdown.appendChild(option);
+      select.appendChild(option);
     });
     
     // Zeige Dropdown mit Ergebnissen
@@ -1815,5 +1859,5 @@ window.addEventListener('load', function() {
 });
 </script>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'986a865f83b5dbfa',t:'MTc1OTEzODg4Ny4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'986a926eb3d7d2ca',t:'MTc1OTEzOTM4MS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
