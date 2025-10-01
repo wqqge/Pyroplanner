@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <title>🎆 FirePlanner 2D - Pro Advanced (Korrigiert)</title>
 <style>
+/* (Styles unverändert, exakt wie im Original) */
 body {
   box-sizing: border-box;
   font-family: Arial, sans-serif;
@@ -25,13 +26,11 @@ input, button, select, textarea {
   font-size: 14px;
   outline: none;
 }
-
 input:focus, textarea:focus, select:focus {
   background: #333;
   border-color: #4caf50;
   box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
 }
-
 input[type="text"], input[type="number"], textarea {
   width: 200px;
   max-width: 100%;
@@ -688,6 +687,7 @@ button:hover {
 <script>
 // ===== KORRIGIERTE UND VOLLSTÄNDIGE VERSION =====
 
+// Daten & Status
 let effects = [];
 let showTimer = null;
 let showStartTime = 0;
@@ -701,11 +701,11 @@ let autoBackupInterval = null;
 let currentEffectImage = null;
 let currentEffectVideo = null;
 
-// Zündanlagen-Variablen
+// Zündanlagen
 let selectedEffect = null;
 let ignitionBoxes = { A: {}, B: {}, C: {}, D: {}, E: {}, F: {} };
 
-// Zündbox-Positionen (verschiebbar)
+// Zündbox-Positionen
 let ignitionBoxPositions = {
   A: { x: 50, y: 50 },
   B: { x: 150, y: 50 },
@@ -720,70 +720,61 @@ let draggedBox = null;
 let dragOffset = { x: 0, y: 0 };
 let isDraggingBox = false;
 
-// Beat-Sync Variables
+// Beat-Sync
 let audioContext = null;
 let audioBuffer = null;
 let beatTimes = [];
 let bpm = 0;
 
-// Collaboration Variables
+// Collaboration
 let collaborationId = null;
 let isCollaborating = false;
 let collaborators = [];
 let lastSyncTime = 0;
 
-// Inventory Variables
+// Inventory
 let inventoryWarnings = [];
 
-// Cleanup Variables
+// Cleanup
 let intervals = [];
 let eventListeners = [];
 
-// ===== UTILITY FUNCTIONS (SICHERHEIT) =====
+// ===== Utility =====
 function escapeHtml(text) {
   if (!text) return '';
   const div = document.createElement('div');
   div.textContent = text.toString();
   return div.innerHTML;
 }
-
 function generateUniqueId() {
   return `${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${Math.floor(Math.random() * 10000)}`;
 }
-
 function safeParseInt(value, defaultValue = 0) {
   const parsed = parseInt(value);
   return isNaN(parsed) ? defaultValue : parsed;
 }
-
 function safeParseFloat(value, defaultValue = 0) {
   const parsed = parseFloat(value);
   return isNaN(parsed) ? defaultValue : parsed;
 }
-
 function addManagedInterval(callback, delay) {
   const id = setInterval(callback, delay);
   intervals.push(id);
   return id;
 }
-
 function addManagedEventListener(element, event, callback) {
   if (!element) return;
   element.addEventListener(event, callback);
   eventListeners.push({ element, event, callback });
 }
-
 function cleanup() {
-  intervals.forEach(id => {
-    try { clearInterval(id); } catch (e) { console.warn('Error clearing interval:', e); }
-  });
+  intervals.forEach(id => { try { clearInterval(id); } catch (e) { console.warn('Error clearing interval:', e); } });
   intervals = [];
   eventListeners.forEach(({ element, event, callback }) => {
     try { if (element && element.removeEventListener) element.removeEventListener(event, callback); } catch (e) { console.warn('Error removing event listener:', e); }
   });
   eventListeners = [];
 }
-
 function showSuccessMessage(message, duration = 3000) {
   const successMsg = document.createElement('div');
   successMsg.style.cssText = `
@@ -810,21 +801,33 @@ function showSuccessMessage(message, duration = 3000) {
   }, duration);
 }
 
-// ===== Persistence for effects and DB =====
+// ===== Persistence helpers =====
+function saveEffectsToStorage() {
+  try { localStorage.setItem('effects', JSON.stringify(effects)); } catch (e) { console.warn('saveEffects failed', e); }
+}
 function loadEffectsFromStorage() {
   try {
-    const saved = localStorage.getItem('effects');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) effects = parsed;
+    const s = localStorage.getItem('effects');
+    if (s) {
+      const p = JSON.parse(s);
+      if (Array.isArray(p)) effects = p;
     }
-  } catch (e) { console.warn('Konnte Effekte aus localStorage nicht laden:', e); }
+  } catch (e) { console.warn('loadEffects failed', e); }
 }
-function saveEffectsToStorage() {
-  try { localStorage.setItem('effects', JSON.stringify(effects)); } catch (e) { console.warn('Konnte Effekte nicht speichern:', e); }
+function saveDB() {
+  try { localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase)); } catch (e) { console.warn('saveDB failed', e); }
+}
+function loadDB() {
+  try {
+    const s = localStorage.getItem('effectDatabase');
+    if (s) {
+      const p = JSON.parse(s);
+      if (Array.isArray(p)) effectDatabase = p;
+    }
+  } catch (e) { console.warn('loadDB failed', e); }
 }
 
-// ===== SICHERE INITIALISIERUNG =====
+// ===== Initialization =====
 window.onload = function() {
   try {
     canvas = document.getElementById('fireworkCanvas');
@@ -834,9 +837,11 @@ window.onload = function() {
 
     loadSavedShows();
     loadSavedEffects();
-    loadEffectDatabase();
-    loadEffectsFromStorage(); // <-- lade gespeicherte Effekte
+    loadDB();                 // load database first
+    loadEffectsFromStorage(); // load persisted effects
     loadIgnitionBoxPositions();
+    updateEffectList();
+    updateCostCalculation();
     drawCanvas();
     startAutoBackup();
     initializeAudioContext();
@@ -846,6 +851,7 @@ window.onload = function() {
   }
 };
 
+// ===== Event listeners & canvas handlers =====
 function setupEventListeners() {
   if (!canvas) return;
 
@@ -868,13 +874,13 @@ function setupEventListeners() {
         const effectToPlace = unplacedEffects[0];
         effectToPlace.x = x; effectToPlace.y = y;
         updateInventoryForEffect(effectToPlace);
-        updateEffectList(); drawCanvas(); if (isCollaborating) syncWithCollaborators();
+        updateEffectList(); drawCanvas();
+        if (isCollaborating) syncWithCollaborators();
         showSuccessMessage(`✅ "${escapeHtml(effectToPlace.name)}" platziert!`);
         saveEffectsToStorage();
       }
     } catch (error) { console.error('Fehler beim Canvas-Click:', error); }
   };
-
   addManagedEventListener(canvas, 'click', canvasClickHandler);
 
   const mouseMoveHandler = function(e) {
@@ -902,6 +908,7 @@ function setupEventListeners() {
       });
     } catch (error) { console.error('Fehler bei Mouse-Down:', error); }
   };
+  addManagedEventListener(canvas, 'mousedown', mouseDownHandler);
 
   const mouseMoveBoxHandler = function(e) {
     try {
@@ -931,6 +938,7 @@ function setupEventListeners() {
       }
     } catch (error) { console.warn('Fehler bei Box-Bewegung:', error); }
   };
+  addManagedEventListener(canvas, 'mousemove', mouseMoveBoxHandler);
 
   const mouseUpHandler = function(e) {
     try {
@@ -942,9 +950,6 @@ function setupEventListeners() {
       isDraggingBox = false; draggedBox = null; canvas.style.cursor = 'crosshair';
     } catch (error) { console.error('Fehler bei Mouse-Up:', error); }
   };
-
-  addManagedEventListener(canvas, 'mousedown', mouseDownHandler);
-  addManagedEventListener(canvas, 'mousemove', mouseMoveBoxHandler);
   addManagedEventListener(canvas, 'mouseup', mouseUpHandler);
 
   const dragOverHandler = function(e) { e.preventDefault(); };
@@ -956,7 +961,8 @@ function setupEventListeners() {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
         draggedEffect.x = x; draggedEffect.y = y;
-        updateEffectList(); drawCanvas(); if (isCollaborating) syncWithCollaborators();
+        updateEffectList(); drawCanvas();
+        if (isCollaborating) syncWithCollaborators();
         draggedEffect = null;
         saveEffectsToStorage();
       } catch (error) { console.error('Fehler beim Drop:', error); }
@@ -966,16 +972,12 @@ function setupEventListeners() {
   addManagedEventListener(canvas, 'drop', dropHandler);
 }
 
-// ===== SICHERE ZEIT-FUNKTIONEN =====
+// ===== Time functions =====
 function parseTime(timeStr) {
   if (!timeStr) return 0;
   try {
     const parts = timeStr.toString().split(':');
-    if (parts.length === 2) {
-      const minutes = safeParseInt(parts[0]);
-      const seconds = safeParseInt(parts[1]);
-      return minutes * 60 + seconds;
-    }
+    if (parts.length === 2) return safeParseInt(parts[0]) * 60 + safeParseInt(parts[1]);
     return safeParseInt(timeStr);
   } catch (error) { console.warn('Fehler beim Parsen der Zeit:', timeStr, error); return 0; }
 }
@@ -988,7 +990,7 @@ function formatTime(seconds) {
   } catch (error) { console.warn('Fehler beim Formatieren der Zeit:', seconds, error); return '00:00'; }
 }
 
-// ===== SICHERE EFFEKT-HINZUFÜGUNG =====
+// ===== Add effect (robust, persists) =====
 function addEffect() {
   console.log('SICHERE addEffect() gestartet');
   let backup = null;
@@ -999,7 +1001,6 @@ function addEffect() {
 
     const name = (nameField.value || '').trim();
     const time = (timeField.value || '').trim();
-
     if (!name) { alert('Bitte einen Effektnamen eingeben!'); nameField.focus(); return false; }
     if (!time) { alert('Bitte eine Showzeit eingeben (z.B. 1:30)!'); timeField.focus(); return false; }
 
@@ -1056,7 +1057,6 @@ function addEffect() {
     saveEffectsToStorage(); // persist
     showSuccessMessage(`✅ "${escapeHtml(name)}" erfolgreich gespeichert! Show hat jetzt ${effects.length} Effekte`);
 
-    // button feedback
     const saveButton = document.querySelector('button[onclick="addEffect()"]');
     if (saveButton) {
       const originalText = saveButton.textContent; const originalBg = saveButton.style.background;
@@ -1072,7 +1072,7 @@ function addEffect() {
   }
 }
 
-// ===== SICHERE EFFEKT-LISTE =====
+// ===== Update list, overview, cost =====
 function updateEffectList() {
   try {
     const list = document.getElementById('effectList'); if (!list) return;
@@ -1123,8 +1123,6 @@ function updateEffectList() {
     });
   } catch (error) { console.error('Fehler beim Aktualisieren der Effekt-Liste:', error); }
 }
-
-// ===== SICHERE KOSTEN-BERECHNUNG =====
 function updateCostCalculation() {
   try {
     let totalCost = 0; let totalEffects = 0;
@@ -1139,4 +1137,235 @@ function updateCostCalculation() {
     }
     const totalCostElement = document.getElementById('totalCost');
     const effectCountElement = document.getElementById('effectCount');
-    if (totalCostElement) totalCostElement.textContent = `Gesamtkosten
+    if (totalCostElement) totalCostElement.textContent = `Gesamtkosten: ${totalCost.toFixed(2)} €`;
+    if (effectCountElement) effectCountElement.textContent = `Anzahl Effekte: ${totalEffects}`;
+    updateEffectOverview();
+  } catch (error) { console.error('Fehler bei Kostenberechnung:', error); }
+}
+function updateEffectOverview() {
+  try {
+    const overviewDiv = document.getElementById('overviewTable'); if (!overviewDiv) return;
+    if (!Array.isArray(effects) || effects.length === 0) { overviewDiv.innerHTML = '<p style="color: #666; font-style: italic;">Keine Effekte in der Show</p>'; return; }
+    const sortedEffects = [...effects].sort((a,b)=> (a.time||0)-(b.time||0));
+    let html = `<table class="overview-table"><thead><tr><th>Zeit</th><th>Effekt</th><th>Typ</th><th>Dauer</th><th>Kanal</th><th>Taste</th><th>Empfänger</th><th>Preis</th><th>Anzahl</th><th>Lager</th></tr></thead><tbody>`;
+    sortedEffects.forEach(effect => {
+      if (!effect) return;
+      try {
+        const dbEffect = effectDatabase.find(e => (e.name === effect.name) || (e.barcode && effect.barcode && e.barcode === effect.barcode));
+        const stockInfo = (dbEffect && typeof dbEffect.stockQuantity === 'number') ? dbEffect.stockQuantity : '-';
+        const safeName = escapeHtml(effect.name || 'Unbenannt');
+        const safeTimeStr = escapeHtml(effect.timeStr || '0:00');
+        const safeEffectType = escapeHtml(effect.effectType || 'rocket');
+        const safeDuration = escapeHtml(effect.plannedDuration || '-');
+        const safeChannel = escapeHtml(effect.channel || '-');
+        const safeButtonKey = escapeHtml(effect.buttonKey || '-');
+        const safeReceiver = escapeHtml(effect.receiver || '-');
+        const safePrice = (effect.price && effect.price > 0) ? safeParseFloat(effect.price).toFixed(2) + '€' : '-';
+        const safeQuantity = Math.max(1, safeParseInt(effect.quantity, 1));
+        const stockColor = stockInfo === 0 ? '#f44336' : (stockInfo <= 5 && stockInfo !== '-' ? '#ff9800' : '#4caf50');
+        html += `<tr><td class="time-cell">${safeTimeStr}</td><td><strong>${safeName}</strong></td><td>${safeEffectType}</td><td>${safeDuration}</td><td class="channel-cell">${safeChannel}</td><td class="button-cell">${safeButtonKey}</td><td>${safeReceiver}</td><td>${safePrice}</td><td>${safeQuantity}</td><td style="color: ${stockColor}">${stockInfo}</td></tr>`;
+      } catch (rowError) { console.error('Fehler beim Erstellen der Tabellenzeile:', rowError, effect); }
+    });
+    html += '</tbody></table>'; overviewDiv.innerHTML = html;
+  } catch (error) { console.error('Fehler bei Effekt-Übersicht:', error); }
+}
+
+// ===== DB functions (implemented) =====
+function addToDatabase() {
+  try {
+    const name = (document.getElementById('name')?.value || '').trim();
+    if (!name) { alert('Bitte erst einen Effektnamen eingeben.'); return; }
+    const entry = {
+      id: generateUniqueId(),
+      name,
+      barcode: (document.getElementById('barcode')?.value || '').trim(),
+      price: safeParseFloat(document.getElementById('price')?.value),
+      effectType: document.getElementById('effectType')?.value || 'rocket',
+      plannedDuration: (document.getElementById('plannedDuration')?.value || '').trim(),
+      stockQuantity: (function(){ const v=document.getElementById('stockQuantity')?.value; return v===''? null : safeParseInt(v,0); })(),
+      image: currentEffectImage || null,
+      video: currentEffectVideo || null,
+      createdAt: new Date().toISOString()
+    };
+    effectDatabase.push(entry);
+    saveDB();
+    updateDatabaseList();
+    checkInventoryWarnings();
+    showSuccessMessage(`✅ "${escapeHtml(entry.name)}" zur Datenbank hinzugefügt`);
+  } catch (e) { console.error('addToDatabase',e); alert('Fehler beim Hinzufügen zur DB: '+e.message); }
+}
+function clearDatabase() {
+  try {
+    if (!confirm('Datenbank wirklich leeren?')) return;
+    effectDatabase = [];
+    saveDB();
+    updateDatabaseList();
+    showSuccessMessage('✅ Effekt-Datenbank geleert');
+  } catch (e) { console.error('clearDatabase', e); alert('Fehler beim Leeren der DB: '+e.message); }
+}
+function importExcelDatabase() {
+  try {
+    const fileInput = document.getElementById('excelImport');
+    const file = fileInput?.files?.[0];
+    if (!file) { alert('Bitte eine CSV/TSV-Datei auswählen.'); return; }
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+      try {
+        const text = ev.target.result;
+        const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length>0);
+        const entries = [];
+        lines.forEach(line => {
+          const parts = line.split(/\s*\|\s*|\s*;\s*|\t|,/);
+          const name = (parts[0]||'').trim(); if(!name) return;
+          const barcode = (parts[1]||'').trim();
+          const duration = (parts[2]||'').trim();
+          const price = safeParseFloat(parts[3],0);
+          const type = (parts[4]||'rocket').trim();
+          const stock = parts[5]!==undefined ? safeParseInt(parts[5], null) : null;
+          entries.push({ id: generateUniqueId(), name, barcode, duration, price, effectType: type, stockQuantity: stock, createdAt: new Date().toISOString() });
+        });
+        if (entries.length===0) { alert('Keine Einträge gefunden'); return; }
+        effectDatabase.push(...entries);
+        saveDB();
+        updateDatabaseList();
+        checkInventoryWarnings();
+        showSuccessMessage(`✅ ${entries.length} Effekte importiert`);
+      } catch(e) { console.error('import processing',e); alert('Import-Fehler: '+e.message); }
+    };
+    reader.readAsText(file,'utf-8');
+  } catch(e) { console.error('importExcelDatabase',e); alert('Import-Fehler: '+e.message); }
+}
+
+// ===== Image/Video handling =====
+function previewVideo() {
+  try {
+    const fileInput = document.getElementById('effectVideo');
+    const file = fileInput?.files?.[0];
+    const previewDiv = document.getElementById('videoPreview');
+    if (!previewDiv) return;
+    if (file) {
+      const url = URL.createObjectURL(file);
+      const reader = new FileReader();
+      reader.onload = function(e) { currentEffectVideo = e.target.result; previewDiv.innerHTML = `<video class="video-preview" controls muted onerror="this.style.display='none';"><source src="${url}" type="${file.type}">Ihr Browser unterstützt keine Videos.</video>`; };
+      reader.readAsDataURL(file);
+    } else clearVideo();
+  } catch (error) { console.error('Fehler bei Video-Vorschau:', error); }
+}
+function clearVideo() {
+  try { currentEffectVideo = null; const previewDiv = document.getElementById('videoPreview'); const fileInput = document.getElementById('effectVideo'); if (previewDiv) previewDiv.innerHTML=''; if (fileInput) fileInput.value=''; } catch(e){console.error('Fehler beim Video-Löschen:',e);}
+}
+function previewImage() {
+  try {
+    const fileInput = document.getElementById('effectImage');
+    const file = fileInput?.files?.[0];
+    const previewDiv = document.getElementById('imagePreview');
+    if (!previewDiv) return;
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = function(e) { currentEffectImage = e.target.result; previewDiv.innerHTML = `<img src="${currentEffectImage}" class="image-preview" alt="Effekt Vorschau" onerror="this.style.display='none';">`; };
+      reader.readAsDataURL(file);
+    } else clearImage();
+  } catch (error) { console.error('Fehler bei Bild-Vorschau:', error); }
+}
+function clearImage() {
+  try { currentEffectImage = null; const previewDiv = document.getElementById('imagePreview'); const fileInput = document.getElementById('effectImage'); if (previewDiv) previewDiv.innerHTML=''; if (fileInput) fileInput.value=''; } catch(e){console.error('Fehler beim Bild-Löschen:',e);}
+}
+
+// ===== Canvas draw =====
+function drawCanvas() {
+  try {
+    if (!ctx || !canvas) { console.warn('Canvas oder Kontext nicht verfügbar'); return; }
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+    for (let x=0;x<=canvas.width;x+=50){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke(); }
+    for (let y=0;y<=canvas.height;y+=50){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke(); }
+    drawIgnitionBoxes();
+    if (Array.isArray(beatTimes) && beatTimes.length>0) {
+      ctx.strokeStyle='#ff9800'; ctx.lineWidth=2; const maxMarkers = Math.min(10, beatTimes.length);
+      for (let i=0;i<maxMarkers;i++){ const x=(i/maxMarkers)*canvas.width; ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke(); }
+    }
+    if (isCollaborating) drawCollaborationCursors();
+    if (Array.isArray(effects)) {
+      effects.forEach(effect => {
+        if (!effect || typeof effect.x !== 'number' || typeof effect.y !== 'number') return;
+        try {
+          const colors = { rocket:'#ff4444', fountain:'#44ff44', battery:'#4444ff' };
+          const dbEffect = effectDatabase.find(e => (e.name === effect.name) || (e.barcode && effect.barcode && e.barcode === effect.barcode));
+          let effectColor = colors[effect.effectType] || '#ffffff';
+          if (dbEffect && typeof dbEffect.stockQuantity === 'number') {
+            if (dbEffect.stockQuantity === 0) effectColor = '#666666';
+            else if (dbEffect.stockQuantity < (effect.quantity || 1)) effectColor = '#ff9800';
+          }
+          ctx.fillStyle = effectColor; ctx.beginPath(); ctx.arc(effect.x, effect.y, 8, 0, 2*Math.PI); ctx.fill();
+          if (effect.image) { ctx.fillStyle='#ffff00'; ctx.font='16px Arial'; ctx.fillText('📸', effect.x-8, effect.y-12); }
+          if (effect.video) { ctx.fillStyle='#ff00ff'; ctx.font='16px Arial'; ctx.fillText('🎬', effect.x+8, effect.y-12); }
+          ctx.fillStyle='#ffffff'; ctx.font='12px Arial'; ctx.fillText(escapeHtml(effect.name || 'Effekt'), effect.x+12, effect.y+4); ctx.fillText(escapeHtml(effect.timeStr || '0:00'), effect.x+12, effect.y+16);
+          if (effect.ignitionBox && effect.ignitionChannel) { ctx.fillStyle='#00ffff'; ctx.fillText(`${escapeHtml(effect.ignitionBox)}${escapeHtml(effect.ignitionChannel)}`, effect.x+12, effect.y+28); }
+          else if (effect.channel && effect.buttonKey) { ctx.fillStyle='#00ffff'; ctx.fillText(`K${escapeHtml(effect.channel)}-T${escapeHtml(effect.buttonKey)}`, effect.x+12, effect.y+28); }
+          if (effect.price && effect.price>0) { ctx.fillStyle='#90ee90'; ctx.fillText(`${safeParseFloat(effect.price).toFixed(2)}€`, effect.x+12, effect.y+40); }
+          if (dbEffect && typeof dbEffect.stockQuantity==='number' && dbEffect.stockQuantity < (effect.quantity||1)) { ctx.fillStyle='#ff0000'; ctx.font='bold 10px Arial'; ctx.fillText('⚠️', effect.x-15, effect.y-15); }
+        } catch (effectError) { console.error('Fehler beim Zeichnen des Effekts:', effectError, effect); }
+      });
+    }
+    const unplacedEffects = effects.filter(effect => effect.x === null || effect.y === null);
+    if (unplacedEffects.length>0) {
+      ctx.fillStyle='#ffff00'; ctx.font='bold 16px Arial'; ctx.fillText(`${unplacedEffects.length} Effekt(e) noch nicht platziert`, 20,30); ctx.font='14px Arial'; ctx.fillText('Klicke auf das Abbrennfeld um sie zu platzieren', 20,50);
+      if (unplacedEffects[0]) { ctx.fillStyle='#ff8800'; ctx.fillText(`Nächster: "${escapeHtml(unplacedEffects[0].name || 'Effekt')}"`, 20,70); }
+    }
+    if (Array.isArray(beatTimes) && beatTimes.length>0) { ctx.fillStyle='#ff9800'; ctx.font='12px Arial'; ctx.fillText(`🎵 ${beatTimes.length} Beats | ${bpm} BPM`, canvas.width-150, 20); }
+    if (isCollaborating) { ctx.fillStyle='#2196f3'; ctx.font='12px Arial'; ctx.fillText('👥 Team-Modus aktiv', canvas.width-150, canvas.height-10); }
+  } catch (error) { console.error('Fehler beim Zeichnen des Canvas:', error); }
+}
+
+function drawIgnitionBoxes() {
+  try {
+    Object.keys(ignitionBoxPositions).forEach(boxName => {
+      const pos = ignitionBoxPositions[boxName];
+      const box = ignitionBoxes[boxName] || {};
+      const assignedChannels = Object.keys(box).length;
+      const isDragging = (isDraggingBox && draggedBox === boxName);
+      let bgColor = assignedChannels > 0 ? '#1a4d1a' : '#2a2a2a';
+      if (isDragging) bgColor = '#4a4a00';
+      ctx.fillStyle = bgColor; ctx.fillRect(pos.x-25,pos.y-15,50,30);
+      let borderColor = assignedChannels>0 ? '#4caf50' : '#666'; if (isDragging) borderColor = '#ffff00';
+      ctx.strokeStyle = borderColor; ctx.lineWidth = isDragging ? 3 : 2; ctx.strokeRect(pos.x-25,pos.y-15,50,30);
+      if (!isDragging) { ctx.fillStyle='#888'; ctx.font='8px Arial'; ctx.textAlign='right'; ctx.fillText('⋮⋮', pos.x+22, pos.y-8); }
+      ctx.fillStyle='#ffffff'; ctx.font='bold 14px Arial'; ctx.textAlign='center'; ctx.fillText(`📡${boxName}`, pos.x, pos.y-2);
+      ctx.font='10px Arial'; ctx.fillStyle = assignedChannels>0 ? '#4caf50' : '#999'; ctx.fillText(`${assignedChannels}/32`, pos.x, pos.y+10);
+      if (assignedChannels>0) { ctx.fillStyle='#4caf50'; ctx.beginPath(); ctx.arc(pos.x+20, pos.y-10, 3,0,2*Math.PI); ctx.fill(); }
+      if (assignedChannels>0) {
+        ctx.font='8px Arial'; ctx.fillStyle='#ffff00'; let yOffset=25;
+        const sortedChannels = Object.keys(box).sort((a,b)=>parseInt(a)-parseInt(b)).slice(0,3);
+        sortedChannels.forEach(channel => { const effect = box[channel]; if (effect) { ctx.fillText(`${channel}:${escapeHtml(effect.name.substring(0,8))}`, pos.x, pos.y+yOffset); yOffset+=10; }});
+        if (assignedChannels>3) ctx.fillText(`+${assignedChannels-3} mehr`, pos.x, pos.y+yOffset);
+      }
+    });
+    ctx.textAlign='left';
+  } catch (error) { console.error('Fehler beim Zeichnen der Zündboxen:', error); }
+}
+function drawCollaborationCursors() {
+  try {
+    if (Array.isArray(collaborators) && collaborators.length>0) {
+      collaborators.forEach((collaborator, index) => {
+        if (!collaborator || typeof collaborator.x!=='number' || typeof collaborator.y!=='number') return;
+        ctx.fillStyle = `hsl(${index*60},70%,50%)`; ctx.beginPath(); ctx.arc(collaborator.x, collaborator.y, 5,0,2*Math.PI); ctx.fill();
+        ctx.fillStyle='#ffffff'; ctx.font='10px Arial'; ctx.fillText(escapeHtml(collaborator.name||'User'), collaborator.x+10, collaborator.y-10);
+      });
+    }
+  } catch (error) { console.error('Fehler beim Zeichnen der Kollaborations-Cursor:', error); }
+}
+
+// ===== Zündanlagen / Auswahl / Assign / Remove =====
+function selectEffectForIgnition(effectId) {
+  try {
+    selectedEffect = effects.find(e => e && e.id===effectId);
+    if (selectedEffect) {
+      updateCurrentSelection();
+      const ignitionBox = document.querySelector('#ignitionBox');
+      if (ignitionBox) {
+        ignitionBox.scrollIntoView({ behavior: 'smooth' });
+        const section = ignitionBox.closest('div[style*="background: #1a1a2e"]');
+        if (section) { section.style.boxShadow='0 0 20px rgba(76,175,80,0.5)'; setTimeout(()=>{ section.style.boxShadow=''; },3000); }
+      }
+    }
+  } catch (error) {
