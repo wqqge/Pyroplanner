@@ -491,12 +491,31 @@ window.onload = function() {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     
-    if (effects.length > 0) {
-      const lastEffect = effects[effects.length - 1];
-      lastEffect.x = x;
-      lastEffect.y = y;
+    // Finde nicht platzierte Effekte
+    const unplacedEffects = effects.filter(effect => effect.x === null || effect.y === null);
+    
+    if (unplacedEffects.length > 0) {
+      const effectToPlace = unplacedEffects[0];
+      effectToPlace.x = x;
+      effectToPlace.y = y;
       updateEffectList();
       drawCanvas();
+      
+      // Zeige Bestätigung
+      const tempMsg = document.createElement('div');
+      tempMsg.style.cssText = `
+        position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+        background: #4caf50; color: white; padding: 10px 20px;
+        border-radius: 5px; z-index: 1000; font-weight: bold;
+      `;
+      tempMsg.textContent = `✅ "${effectToPlace.name}" platziert!`;
+      document.body.appendChild(tempMsg);
+      
+      setTimeout(() => {
+        if (tempMsg.parentNode) {
+          tempMsg.parentNode.removeChild(tempMsg);
+        }
+      }, 2000);
     }
   });
   
@@ -1138,8 +1157,8 @@ function addEffect() {
     quantity,
     additionalInfo,
     image: currentEffectImage, // Add image if available
-    x: 400,
-    y: 250
+    x: null, // Muss manuell platziert werden
+    y: null
   };
   
   effects.push(effect);
@@ -1196,11 +1215,15 @@ function updateEffectList() {
         <div>
           <strong>${effect.name}</strong><br>
           Zeit: ${effect.timeStr} | Typ: ${effect.effectType}<br>
-          Kanal: ${effect.channel} | Taste: ${effect.buttonKey}<br>
-          ${effect.price > 0 ? `Preis: ${effect.price.toFixed(2)}€ | ` : ''}Anzahl: ${effect.quantity}
+          Kanal: ${effect.channel || 'Nicht gesetzt'} | Taste: ${effect.buttonKey || 'Nicht gesetzt'}<br>
+          ${effect.price > 0 ? `Preis: ${effect.price.toFixed(2)}€ | ` : ''}Anzahl: ${effect.quantity}<br>
+          Position: ${effect.x ? `X:${Math.round(effect.x)}, Y:${Math.round(effect.y)}` : 'Nicht platziert'}
         </div>
       </div>
-      <button class="effect-delete" onclick="deleteEffect(${effect.id})">×</button>
+      <div style="display: flex; gap: 5px;">
+        <button class="effect-edit" onclick="editEffect(${effect.id})" style="background: #2196f3; color: white; border: none; padding: 5px 8px; border-radius: 3px; cursor: pointer; font-size: 12px;">✏️</button>
+        <button class="effect-delete" onclick="deleteEffect(${effect.id})">×</button>
+      </div>
     `;
     
     // Add drag handlers
@@ -1281,11 +1304,88 @@ function updateEffectOverview() {
   overviewDiv.innerHTML = html;
 }
 
-function deleteEffect(id) {
-  effects = effects.filter(e => e.id !== id);
+function editEffect(id) {
+  const effect = effects.find(e => e.id === id);
+  if (!effect) return;
+  
+  // Erstelle Bearbeitungs-Modal
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.8); z-index: 1000; display: flex;
+    align-items: center; justify-content: center;
+  `;
+  
+  modal.innerHTML = `
+    <div style="background: #222; padding: 20px; border-radius: 10px; width: 400px; max-width: 90%;">
+      <h3 style="margin-top: 0; color: #fff;">Effekt bearbeiten: ${effect.name}</h3>
+      
+      <label style="color: #ccc; display: block; margin: 10px 0 5px;">Showzeit (m:s):</label>
+      <input id="editTime" value="${effect.timeStr}" style="width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #555; border-radius: 5px;">
+      
+      <label style="color: #ccc; display: block; margin: 10px 0 5px;">Kanal:</label>
+      <input id="editChannel" value="${effect.channel || ''}" style="width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #555; border-radius: 5px;">
+      
+      <label style="color: #ccc; display: block; margin: 10px 0 5px;">Empfänger:</label>
+      <input id="editReceiver" value="${effect.receiver || ''}" style="width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #555; border-radius: 5px;">
+      
+      <label style="color: #ccc; display: block; margin: 10px 0 5px;">Taste:</label>
+      <input id="editButtonKey" value="${effect.buttonKey || ''}" style="width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #555; border-radius: 5px;">
+      
+      <label style="color: #ccc; display: block; margin: 10px 0 5px;">Anzahl:</label>
+      <input id="editQuantity" type="number" value="${effect.quantity || 1}" style="width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #555; border-radius: 5px;">
+      
+      <label style="color: #ccc; display: block; margin: 10px 0 5px;">Zusatzinfos:</label>
+      <textarea id="editAdditionalInfo" style="width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #555; border-radius: 5px; height: 60px;">${effect.additionalInfo || ''}</textarea>
+      
+      <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+        <button onclick="this.parentElement.parentElement.parentElement.remove()" style="padding: 10px 15px; background: #666; color: white; border: none; border-radius: 5px; cursor: pointer;">Abbrechen</button>
+        <button onclick="saveEffectEdit(${effect.id})" style="padding: 10px 15px; background: #4caf50; color: white; border: none; border-radius: 5px; cursor: pointer;">Speichern</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+}
+
+function saveEffectEdit(id) {
+  const effect = effects.find(e => e.id === id);
+  if (!effect) return;
+  
+  const newTime = document.getElementById('editTime').value;
+  const newChannel = document.getElementById('editChannel').value;
+  const newReceiver = document.getElementById('editReceiver').value;
+  const newButtonKey = document.getElementById('editButtonKey').value;
+  const newQuantity = parseInt(document.getElementById('editQuantity').value) || 1;
+  const newAdditionalInfo = document.getElementById('editAdditionalInfo').value;
+  
+  // Aktualisiere Effekt
+  effect.timeStr = newTime;
+  effect.time = parseTime(newTime);
+  effect.channel = newChannel;
+  effect.receiver = newReceiver;
+  effect.buttonKey = newButtonKey;
+  effect.quantity = newQuantity;
+  effect.additionalInfo = newAdditionalInfo;
+  
+  // Schließe Modal
+  document.querySelector('[style*="position: fixed"]').remove();
+  
+  // Aktualisiere Anzeige
   updateEffectList();
   updateCostCalculation();
   drawCanvas();
+  
+  alert(`Effekt "${effect.name}" wurde aktualisiert!`);
+}
+
+function deleteEffect(id) {
+  if (confirm('Effekt wirklich löschen?')) {
+    effects = effects.filter(e => e.id !== id);
+    updateEffectList();
+    updateCostCalculation();
+    drawCanvas();
+  }
 }
 
 function drawCanvas() {
@@ -1309,36 +1409,61 @@ function drawCanvas() {
   
   // Draw effects
   effects.forEach(effect => {
-    const colors = {
-      rocket: '#ff4444',
-      fountain: '#44ff44',
-      battery: '#4444ff'
-    };
-    
-    // Draw effect circle
-    ctx.fillStyle = colors[effect.effectType] || '#ffffff';
-    ctx.beginPath();
-    ctx.arc(effect.x, effect.y, 8, 0, 2 * Math.PI);
-    ctx.fill();
-    
-    // Draw image icon if available
-    if (effect.image) {
-      ctx.fillStyle = '#ffff00';
-      ctx.font = '16px Arial';
-      ctx.fillText('📸', effect.x - 8, effect.y - 12);
-    }
-    
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '12px Arial';
-    ctx.fillText(effect.name, effect.x + 12, effect.y + 4);
-    ctx.fillText(effect.timeStr, effect.x + 12, effect.y + 16);
-    
-    // Show price if available
-    if (effect.price > 0) {
-      ctx.fillStyle = '#90ee90';
-      ctx.fillText(`${effect.price}€`, effect.x + 12, effect.y + 28);
+    // Nur platzierte Effekte zeichnen
+    if (effect.x !== null && effect.y !== null) {
+      const colors = {
+        rocket: '#ff4444',
+        fountain: '#44ff44',
+        battery: '#4444ff'
+      };
+      
+      // Draw effect circle
+      ctx.fillStyle = colors[effect.effectType] || '#ffffff';
+      ctx.beginPath();
+      ctx.arc(effect.x, effect.y, 8, 0, 2 * Math.PI);
+      ctx.fill();
+      
+      // Draw image icon if available
+      if (effect.image) {
+        ctx.fillStyle = '#ffff00';
+        ctx.font = '16px Arial';
+        ctx.fillText('📸', effect.x - 8, effect.y - 12);
+      }
+      
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '12px Arial';
+      ctx.fillText(effect.name, effect.x + 12, effect.y + 4);
+      ctx.fillText(effect.timeStr, effect.x + 12, effect.y + 16);
+      
+      // Show channel and button if available
+      if (effect.channel && effect.buttonKey) {
+        ctx.fillStyle = '#00ffff';
+        ctx.fillText(`K${effect.channel}-T${effect.buttonKey}`, effect.x + 12, effect.y + 28);
+      }
+      
+      // Show price if available
+      if (effect.price > 0) {
+        ctx.fillStyle = '#90ee90';
+        ctx.fillText(`${effect.price}€`, effect.x + 12, effect.y + 40);
+      }
     }
   });
+  
+  // Zeige Hinweis für nicht platzierte Effekte
+  const unplacedEffects = effects.filter(effect => effect.x === null || effect.y === null);
+  if (unplacedEffects.length > 0) {
+    ctx.fillStyle = '#ffff00';
+    ctx.font = 'bold 16px Arial';
+    ctx.fillText(`${unplacedEffects.length} Effekt(e) noch nicht platziert`, 20, 30);
+    ctx.font = '14px Arial';
+    ctx.fillText('Klicke auf das Abbrennfeld um sie zu platzieren', 20, 50);
+    
+    // Zeige nächsten zu platzierenden Effekt
+    if (unplacedEffects.length > 0) {
+      ctx.fillStyle = '#ff8800';
+      ctx.fillText(`Nächster: "${unplacedEffects[0].name}"`, 20, 70);
+    }
+  }
 }
 
 function createExplosion(x, y, color) {
@@ -1508,45 +1633,78 @@ function printPlan() {
     totalCost += (effect.price || 0) * (effect.quantity || 1);
   });
   
+  // Erstelle Canvas-Abbild für Druck
+  const canvasImage = canvas.toDataURL();
+  
   let html = `
-    <h1>${showName}</h1>
-    <h2>Effektliste</h2>
-    <table border="1" style="width:100%; border-collapse:collapse;">
+    <style>
+      @media print {
+        body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { border: 1px solid #000; padding: 8px; text-align: left; font-size: 12px; }
+        th { background-color: #f0f0f0; font-weight: bold; }
+        .canvas-container { page-break-before: always; text-align: center; }
+        .canvas-image { max-width: 100%; height: auto; border: 2px solid #000; }
+        h1 { font-size: 24px; text-align: center; margin-bottom: 10px; }
+        h2 { font-size: 18px; margin: 20px 0 10px 0; }
+        .summary { background-color: #f9f9f9; padding: 15px; margin: 20px 0; border: 2px solid #000; }
+      }
+    </style>
+    
+    <h1>🎆 ${showName}</h1>
+    
+    <div class="summary">
+      <h2>📊 Show-Übersicht</h2>
+      <p><strong>Anzahl Effekte:</strong> ${effects.length}</p>
+      <p><strong>Gesamtkosten:</strong> ${totalCost.toFixed(2)} €</p>
+      <p><strong>Show-Dauer:</strong> ${effects.length > 0 ? formatTime(Math.max(...effects.map(e => e.time))) : '0:00'}</p>
+      <p><strong>Erstellt am:</strong> ${new Date().toLocaleDateString('de-DE')} um ${new Date().toLocaleTimeString('de-DE')}</p>
+    </div>
+    
+    <h2>🎯 Effektliste (Zeitlich sortiert)</h2>
+    <table>
       <tr>
         <th>Zeit</th>
-        <th>Name</th>
-        <th>Typ</th>
-        <th>Dauer</th>
-        <th>Preis</th>
-        <th>Barcode</th>
+        <th>Effekt</th>
         <th>Kanal</th>
-        <th>Empfänger</th>
         <th>Taste</th>
+        <th>Empfänger</th>
+        <th>Position</th>
         <th>Anzahl</th>
-        <th>Zusatzinfo</th>
+        <th>Preis</th>
       </tr>
   `;
   
   effects.sort((a, b) => a.time - b.time);
   effects.forEach(effect => {
+    const position = (effect.x !== null && effect.y !== null) 
+      ? `X:${Math.round(effect.x)}, Y:${Math.round(effect.y)}` 
+      : 'Nicht platziert';
+    
     html += `
       <tr>
-        <td>${effect.timeStr}</td>
+        <td><strong>${effect.timeStr}</strong></td>
         <td>${effect.name}</td>
-        <td>${effect.effectType}</td>
-        <td>${effect.plannedDuration}</td>
-        <td>${effect.price ? effect.price.toFixed(2) + '€' : '-'}</td>
-        <td>${effect.barcode || '-'}</td>
-        <td>${effect.channel}</td>
-        <td>${effect.receiver}</td>
-        <td>${effect.buttonKey}</td>
+        <td>${effect.channel || '-'}</td>
+        <td>${effect.buttonKey || '-'}</td>
+        <td>${effect.receiver || '-'}</td>
+        <td>${position}</td>
         <td>${effect.quantity}</td>
-        <td>${effect.additionalInfo}</td>
+        <td>${effect.price ? effect.price.toFixed(2) + '€' : '-'}</td>
       </tr>
     `;
   });
   
-  html += `</table><h3>Gesamtkosten: ${totalCost.toFixed(2)} €</h3>`;
+  html += `
+    </table>
+    
+    <div class="canvas-container">
+      <h2>🗺️ Abbrennplatz-Layout</h2>
+      <img src="${canvasImage}" class="canvas-image" alt="Abbrennplatz Layout">
+      <p><em>Legende: 🔴 Raketen | 🟢 Fontänen | 🔵 Batterien</em></p>
+    </div>
+  `;
+  
   printArea.innerHTML = html;
   printArea.style.display = 'block';
   
@@ -2050,5 +2208,5 @@ window.addEventListener('load', function() {
 });
 </script>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'986ac76937e73654',t:'MTc1OTE0MTU1MS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'987a7946b319d24f',t:'MTc1OTMwNjEyMy4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
