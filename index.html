@@ -1107,7 +1107,6 @@ function formatTime(seconds) {
 }
 
 // ===== SICHERE EFFEKT-HINZUFÜGUNG =====
-let backup = null;
 function addEffect() {
   console.log('🚀 SICHERE addEffect() Version 5.0 - ULTRA-SICHER');
   
@@ -2802,18 +2801,294 @@ window.addEventListener('beforeunload', function() {
 console.log('✅ FirePlanner 2D Pro Advanced - Korrigierte Version geladen!');
 </script>
 <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'987bf750f1359bf7',t:'MTc1OTMyMTc3MS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
+<!-- BEGIN: Compatibility & Safety Script (injected) -->
 <script>
-// ==== Ergänzte Dummy-Funktionen, falls sie fehlen ====
-function selectSavedEffect(){console.log("selectSavedEffect() - Dummy");}
-function importExcelDatabase(){alert("Excel-Import noch nicht implementiert");}
-function editEffect(id){alert("Effekt bearbeiten: "+id);}
-function deleteEffect(id){
-  effects = effects.filter(e => e.id !== id);
-  updateEffectList();
-  updateCostCalculation();
+/* Safety/compat functions to ensure original UI works and missing functions exist */
+
+/* utility */
+function _safeParseJSON(s, fallback){ try{ return JSON.parse(s); }catch(e){ return fallback; } }
+function _genId(){ return Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,9); }
+function _formatSec(s){ s=Math.max(0,Math.floor(s)); const m=Math.floor(s/60); const sec=s%60; return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0'); }
+function _parseTimeToSec(str){ if(!str) return 0; const p = str.split(':').map(x=>x.trim()); if(p.length===2) return (parseInt(p[0])||0)*60 + (parseInt(p[1])||0); return parseInt(str)||0; }
+
+/* Provide missing functions if not present already */
+if(typeof selectSavedEffect !== 'function'){
+  function selectSavedEffect(){
+    const sel = document.getElementById('effectSavedList');
+    if(!sel) return;
+    const idx = sel.value;
+    if(!idx) return;
+    try {
+      const saved = _safeParseJSON(localStorage.getItem('savedEffects_v1')||'[]', []);
+      const eff = saved[idx];
+      if(!eff) return alert('Gespeicherter Effekt nicht gefunden');
+      // fill fields
+      document.getElementById('name').value = eff.name || '';
+      document.getElementById('effectType').value = eff.effectType || '';
+      document.getElementById('plannedDuration').value = eff.plannedDuration || '';
+      document.getElementById('price').value = eff.price || '';
+      document.getElementById('barcode').value = eff.barcode || '';
+      document.getElementById('stockQuantity').value = eff.stockQuantity || '';
+      // preview image/video if present
+      if(eff.image){ const p=document.getElementById('imagePreview'); if(p) p.innerHTML = '<img src="'+eff.image+'" class="image-preview">'; }
+      if(eff.video){ const p=document.getElementById('videoPreview'); if(p) p.innerHTML = '<video class="video-preview" controls muted><source src="'+eff.video+'"></video>'; }
+    } catch(e){ console.warn('selectSavedEffect error', e); alert('Fehler beim Laden'); }
+  }
 }
-function printPlan(){window.print();}
+
+/* implement importExcelDatabase as CSV simple parser fallback */
+if(typeof importExcelDatabase !== 'function'){
+  function importExcelDatabase(){
+    const f = document.getElementById('excelImport');
+    if(!f || !f.files || !f.files[0]) { alert('Bitte eine Datei auswählen'); return; }
+    const file = f.files[0];
+    const reader = new FileReader();
+    reader.onload = function(ev){
+      try{
+        const text = ev.target.result;
+        const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
+        const db = [];
+        for(const line of lines){
+          const parts = line.split(/[\|;\t,]/).map(p=>p.trim());
+          // expect: Name | Barcode | Dauer | Preis | Typ | Lager
+          if(parts.length < 1) continue;
+          db.push({ name: parts[0]||'', barcode: parts[1]||'', duration: parts[2]||'', price: parseFloat(parts[3])||0, type: parts[4]||'', stockQuantity: parseInt(parts[5])||0 });
+        }
+        localStorage.setItem('effectDatabase_v1', JSON.stringify(db));
+        if(typeof loadEffectDatabase === 'function') loadEffectDatabase();
+        alert('Excel/CSV importiert: ' + db.length + ' Einträge');
+      }catch(e){ alert('Fehler beim Import: '+e.message); }
+    };
+    reader.readAsText(file);
+  }
+}
+
+/* Safe delete/edit placeholders if missing */
+if(typeof editEffect !== 'function'){
+  function editEffect(id){
+    // try to open existing edit modal in page; fallback: alert
+    if(typeof openEditModal === 'function'){ openEditModal(id); return; }
+    alert('Bearbeiten nicht implementiert. ID: ' + id);
+  }
+}
+if(typeof deleteEffect !== 'function'){
+  function deleteEffect(id){
+    // try to manipulate global effects array if present
+    try{
+      if(window.effects && Array.isArray(window.effects)){
+        window.effects = window.effects.filter(e=>e.id !== id);
+        if(typeof updateEffectList === 'function') updateEffectList();
+        if(typeof updateCostCalculation === 'function') updateCostCalculation();
+      } else {
+        // try element removal by id attribute in DOM as fallback
+        const el = document.querySelector('[data-effect-id="'+id+'"]');
+        if(el) el.remove();
+      }
+    }catch(e){ console.warn('deleteEffect fallback error', e); }
+  }
+}
+
+/* Ensure addEffect has backup variable available in its scope if present */
+if(typeof addEffect === 'function'){
+  try{
+    // Patch: wrap original in a safe wrapper if not already using backup variable
+    // We can't rewrite function source reliably here; but we ensure a global backup placeholder exists
+    if(typeof window._lastEffectsBackup === 'undefined') window._lastEffectsBackup = [];
+  }catch(e){ console.warn(e); }
+}
+
+/* Provide start/pause/resume/stop functions if missing */
+if(typeof startShow !== 'function'){
+  let _showTimer = null, _showStart = 0, _pausedElapsed = 0;
+  function startShow(){
+    try{
+      if(window.effects && window.effects.length === 0){ alert('Keine Effekte'); return; }
+      if(document.getElementById('planScreen')) document.getElementById('planScreen').style.display = 'none';
+      if(document.getElementById('showScreen')) document.getElementById('showScreen').style.display = 'block';
+      _showStart = Date.now();
+      _pausedElapsed = 0;
+      if(_showTimer) clearInterval(_showTimer);
+      _showTimer = setInterval(function(){
+        const elapsed = Math.floor((Date.now()-_showStart)/1000) + _pausedElapsed;
+        if(document.getElementById('timerDisplay')) document.getElementById('timerDisplay').textContent = _formatSec(elapsed);
+        // display current effect if updateCurrentEffect exists
+        if(typeof updateEffectList === 'function'){
+          // find last effect <= elapsed
+          let cur = null;
+          const arr = window.effects || [];
+          for(let i=0;i<arr.length;i++){ if(arr[i].time <= elapsed) cur = arr[i]; else break; }
+          if(cur && document.getElementById('currentEffect')) document.getElementById('currentEffect').textContent = cur.timeStr + ' — ' + cur.name;
+        }
+      }, 300);
+    }catch(e){ console.error('startShow error', e); alert('Fehler beim Starten'); }
+  }
+  function pauseShow(){
+    if(!_showTimer) return;
+    clearInterval(_showTimer); _showTimer = null;
+    _pausedElapsed = Math.floor((Date.now()-_showStart)/1000) + _pausedElapsed;
+    if(document.getElementById('warning')) document.getElementById('warning').textContent = 'PAUSE';
+  }
+  function resumeShow(){
+    if(_showTimer) return;
+    _showStart = Date.now();
+    _showTimer = setInterval(function(){
+      const elapsed = Math.floor((Date.now()-_showStart)/1000) + _pausedElapsed;
+      if(document.getElementById('timerDisplay')) document.getElementById('timerDisplay').textContent = _formatSec(elapsed);
+    },300);
+    if(document.getElementById('warning')) document.getElementById('warning').textContent = '';
+  }
+  function stopShow(){
+    if(_showTimer) clearInterval(_showTimer); _showTimer = null;
+    _showStart = 0; _pausedElapsed = 0;
+    if(document.getElementById('showScreen')) document.getElementById('showScreen').style.display = 'none';
+    if(document.getElementById('planScreen')) document.getElementById('planScreen').style.display = 'block';
+    if(document.getElementById('timerDisplay')) document.getElementById('timerDisplay').textContent = '00:00';
+    if(document.getElementById('currentEffect')) document.getElementById('currentEffect').textContent = 'Kein Effekt';
+    if(document.getElementById('warning')) document.getElementById('warning').textContent = '';
+  }
+}
+
+/* Provide printPlan fallback */
+if(typeof printPlan !== 'function'){
+  function printPlan(){
+    try{
+      const pa = document.getElementById('printArea') || document.getElementById('printAreaAlt') || document.createElement('div');
+      pa.style.display = 'block';
+      const title = document.getElementById('showName') ? '<h2>'+escapeHtml(document.getElementById('showName').value || 'Show')+'</h2>' : '';
+      const overview = document.getElementById('overviewTable') ? document.getElementById('overviewTable').innerHTML : '';
+      const costs = document.getElementById('costCalculation') ? document.getElementById('costCalculation').innerHTML : '';
+      pa.innerHTML = title + overview + '<hr>' + costs;
+      if(!pa.parentNode) document.body.appendChild(pa);
+      window.print();
+      setTimeout(()=>{ pa.style.display='none'; }, 500);
+    }catch(e){ console.warn('printPlan fallback error', e); window.print(); }
+  }
+}
+
+/* Provide save/load/export/import functions if missing */
+if(typeof saveShow !== 'function'){
+  function saveShow(){
+    try{
+      const name = (document.getElementById('showName') && document.getElementById('showName').value) || ('show_'+(new Date()).toISOString());
+      const key = 'savedShows_legacy_v1';
+      const all = _safeParseJSON(localStorage.getItem(key) || '{}', {});
+      all[name] = { name, effects: window.effects || [], savedAt: (new Date()).toISOString() };
+      localStorage.setItem(key, JSON.stringify(all));
+      alert('Show gespeichert: ' + name);
+      if(typeof loadSavedShows === 'function') loadSavedShows();
+    }catch(e){ alert('Fehler speichern: '+e.message); }
+  }
+}
+if(typeof loadSavedShows !== 'function'){
+  function loadSavedShows(){
+    try{
+      const sel = document.getElementById('savedShows');
+      if(!sel) return;
+      sel.innerHTML = '<option value="">Gespeicherte Shows</option>';
+      const key = 'savedShows_legacy_v1';
+      const all = _safeParseJSON(localStorage.getItem(key) || '{}', {});
+      Object.keys(all).forEach(k=>{ const opt = document.createElement('option'); opt.value = k; opt.textContent = k + ' • ' + (all[k].savedAt || ''); sel.appendChild(opt); });
+    }catch(e){ console.warn('loadSavedShows', e); }
+  }
+}
+if(typeof exportShow !== 'function'){
+  function exportShow(){
+    const data = { name: (document.getElementById('showName') && document.getElementById('showName').value) || 'show', effects: window.effects || [] };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = (data.name.replace(/\s+/g,'_') || 'show') + '.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  }
+}
+if(typeof importShow !== 'function'){
+  function importShow(){
+    const input = document.getElementById('importFile');
+    if(!input || !input.files || !input.files[0]){ alert('Bitte JSON-Datei wählen'); return; }
+    const reader = new FileReader();
+    reader.onload = function(ev){
+      try{
+        const obj = JSON.parse(ev.target.result);
+        if(!obj.effects) { alert('Ungültiges Format'); return; }
+        window.effects = obj.effects.map(x=>({...x}));
+        if(document.getElementById('showName')) document.getElementById('showName').value = obj.name || '';
+        if(typeof updateEffectList === 'function') updateEffectList();
+        if(typeof updateCostCalculation === 'function') updateCostCalculation();
+        alert('Show importiert');
+      }catch(e){ alert('Import-Fehler: '+e.message); }
+    };
+    reader.readAsText(input.files[0]);
+  }
+}
+
+/* Ensure loadEffectDatabase exists and reads localStorage key if present */
+if(typeof loadEffectDatabase !== 'function'){
+  function loadEffectDatabase(){
+    try{
+      const db = _safeParseJSON(localStorage.getItem('effectDatabase')||'[]', []);
+      window.effectDatabase = db;
+      if(typeof updateDatabaseList === 'function') updateDatabaseList();
+    }catch(e){ console.warn('loadEffectDatabase', e); }
+  }
+}
+
+/* End injection */
 </script>
+<!-- END: Compatibility & Safety Script -->
+
+
+<!-- BEGIN: Overwritten Functions for Show + Print -->
+<script>
+function startShow(){
+  if(!window.effects || window.effects.length === 0){
+    alert('Keine Effekte in der Show.');
+    return;
+  }
+  document.getElementById('planScreen').style.display = 'none';
+  document.getElementById('showScreen').style.display = 'block';
+  let startTime = Date.now();
+  let paused = false;
+  let pauseOffset = 0;
+  if(window._showTimer) clearInterval(window._showTimer);
+  window._showTimer = setInterval(()=>{
+    if(paused) return;
+    let elapsed = Math.floor((Date.now() - startTime)/1000) + pauseOffset;
+    document.getElementById('timerDisplay').textContent = formatTime(elapsed);
+    let current = null;
+    for(let eff of effects){ if(eff.time <= elapsed) current = eff; else break; }
+    document.getElementById('currentEffect').textContent = current ? (effToStr(current)) : 'Kein Effekt';
+  }, 500);
+  // Steuerfunktionen
+  window.pauseShow = ()=>{ paused = true; document.getElementById('warning').textContent='PAUSE'; pauseOffset = Math.floor((Date.now()-startTime)/1000)+pauseOffset; };
+  window.resumeShow = ()=>{ paused = false; startTime = Date.now(); document.getElementById('warning').textContent=''; };
+  window.stopShow = ()=>{ clearInterval(window._showTimer); document.getElementById('showScreen').style.display='none'; document.getElementById('planScreen').style.display='block'; document.getElementById('timerDisplay').textContent='00:00'; document.getElementById('currentEffect').textContent='Kein Effekt'; document.getElementById('warning').textContent=''; };
+}
+function formatTime(sec){ sec=Math.max(0,sec); let m=Math.floor(sec/60), s=sec%60; return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'); }
+function effToStr(e){ return e.timeStr + ' — ' + e.name; }
+
+function printPlan(){
+  const pa = document.getElementById('printArea') || document.createElement('div');
+  pa.innerHTML = "";
+  let title = "<h2>"+(document.getElementById('showName')?.value || "Show")+"</h2>";
+  let overview = document.getElementById('overviewTable')?.innerHTML || "";
+  let costs = document.getElementById('costCalculation')?.innerHTML || "";
+  let canvas = document.getElementById('ignitionCanvas');
+  let canvasImg = "";
+  if(canvas){
+    try{ canvasImg = '<h3>Abbrandplatz</h3><img src="'+canvas.toDataURL()+'" style="max-width:100%;">'; }catch(e){}
+  }
+  pa.innerHTML = title + "<div>"+overview+"</div><hr><div>"+costs+"</div><hr>"+canvasImg;
+  document.body.appendChild(pa);
+  window.print();
+  pa.remove();
+}
+</script>
+<style>
+@media print {
+  body * { visibility:hidden; }
+  #printArea, #printArea * { visibility:visible; }
+  #printArea { position:absolute; left:0; top:0; width:100%; }
+}
+</style>
+<!-- END: Overwritten Functions -->
 
 </body>
 </html>
