@@ -427,6 +427,10 @@ button:hover {
 <button onclick="pauseShow()">Pause</button>
 <button onclick="resumeShow()">Fortsetzen</button>
 <button onclick="stopShow()">Stopp</button>
+    <!-- ✅ NEU: GitHub Cloud Buttons -->
+    <button onclick="githubBackup()">☁️ GitHub-Backup hochladen</button>
+    <button onclick="githubRestore()">☁️ GitHub-Backup laden</button>
+
 </div>
 </div>
 
@@ -2206,7 +2210,209 @@ window.addEventListener('load', function() {
     }
   }
 });
+
+/* ==========================================================
+   🌐 GitHub Cloud Integration
+   ========================================================== */
+
+let githubConfig = {
+  user: null,
+  repo: null,
+  file: "backup.json",
+  token: null
+};
+
+function ensureGithubConfig() {
+  if (!githubConfig.user) {
+    githubConfig.user = prompt("👤 Dein GitHub Benutzername:");
+  }
+  if (!githubConfig.repo) {
+    githubConfig.repo = prompt("📦 Repo-Name für Backup:");
+  }
+  if (!githubConfig.token) {
+    githubConfig.token = prompt("🔑 Personal Access Token (mit repo-Rechten):");
+  }
+}
+
+async function githubBackup() {
+  ensureGithubConfig();
+
+  const backupData = {
+    shows: JSON.parse(localStorage.getItem('savedShows') || '[]'),
+    effects: savedEffects,
+    database: effectDatabase,
+    timestamp: new Date().toISOString()
+  };
+
+  const content = btoa(unescape(encodeURIComponent(JSON.stringify(backupData, null, 2))));
+
+  const url = `https://api.github.com/repos/${githubConfig.user}/${githubConfig.repo}/contents/${githubConfig.file}`;
+
+  let sha = null;
+  try {
+    const checkRes = await fetch(url, {
+      headers: { Authorization: `token ${githubConfig.token}` }
+    });
+    if (checkRes.ok) {
+      const checkData = await checkRes.json();
+      sha = checkData.sha;
+    }
+  } catch (err) {
+    console.warn("⚠️ Fehler beim Prüfen:", err);
+  }
+
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "Authorization": `token ${githubConfig.token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      message: "💾 FirePlanner Backup",
+      content: content,
+      sha: sha || undefined
+    })
+  });
+
+  if (res.ok) {
+    alert("✅ Backup erfolgreich auf GitHub gespeichert!");
+  } else {
+    const error = await res.json();
+    alert("❌ Fehler beim Backup:\n" + JSON.stringify(error, null, 2));
+  }
+}
+
+async function githubRestore() {
+  ensureGithubConfig();
+
+  const url = `https://api.github.com/repos/${githubConfig.user}/${githubConfig.repo}/contents/${githubConfig.file}`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `token ${githubConfig.token}` }
+  });
+
+  if (!res.ok) {
+    alert("❌ Konnte Backup nicht laden!");
+    return;
+  }
+
+  const data = await res.json();
+  const content = decodeURIComponent(escape(atob(data.content)));
+  const backupData = JSON.parse(content);
+
+  localStorage.setItem('savedShows', JSON.stringify(backupData.shows || []));
+  localStorage.setItem('effectDatabase', JSON.stringify(backupData.database || []));
+  savedEffects = backupData.effects || [];
+
+  loadSavedShows();
+  updateDatabaseList();
+  updateSavedEffectsList();
+
+  alert("✅ Backup aus GitHub geladen!");
+}
+
 </script>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'987d2896e2bbfcd5',t:'MTc1OTMzNDI3NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'987d2896e2bbfcd5',t:'MTc1OTMzNDI3NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();
+/* ==========================================================
+   🌐 GitHub Cloud Integration
+   ========================================================== */
+
+let githubConfig = {
+  user: null,
+  repo: null,
+  file: "backup.json",
+  token: null
+};
+
+function ensureGithubConfig() {
+  if (!githubConfig.user) {
+    githubConfig.user = prompt("👤 Dein GitHub Benutzername:");
+  }
+  if (!githubConfig.repo) {
+    githubConfig.repo = prompt("📦 Repo-Name für Backup:");
+  }
+  if (!githubConfig.token) {
+    githubConfig.token = prompt("🔑 Personal Access Token (mit repo-Rechten):");
+  }
+}
+
+async function githubBackup() {
+  ensureGithubConfig();
+
+  const backupData = {
+    shows: JSON.parse(localStorage.getItem('savedShows') || '[]'),
+    effects: savedEffects,
+    database: effectDatabase,
+    timestamp: new Date().toISOString()
+  };
+
+  const content = btoa(unescape(encodeURIComponent(JSON.stringify(backupData, null, 2))));
+
+  const url = `https://api.github.com/repos/${githubConfig.user}/${githubConfig.repo}/contents/${githubConfig.file}`;
+
+  let sha = null;
+  try {
+    const checkRes = await fetch(url, {
+      headers: { Authorization: `token ${githubConfig.token}` }
+    });
+    if (checkRes.ok) {
+      const checkData = await checkRes.json();
+      sha = checkData.sha;
+    }
+  } catch (err) {
+    console.warn("⚠️ Fehler beim Prüfen:", err);
+  }
+
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "Authorization": `token ${githubConfig.token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      message: "💾 FirePlanner Backup",
+      content: content,
+      sha: sha || undefined
+    })
+  });
+
+  if (res.ok) {
+    alert("✅ Backup erfolgreich auf GitHub gespeichert!");
+  } else {
+    const error = await res.json();
+    alert("❌ Fehler beim Backup:\n" + JSON.stringify(error, null, 2));
+  }
+}
+
+async function githubRestore() {
+  ensureGithubConfig();
+
+  const url = `https://api.github.com/repos/${githubConfig.user}/${githubConfig.repo}/contents/${githubConfig.file}`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `token ${githubConfig.token}` }
+  });
+
+  if (!res.ok) {
+    alert("❌ Konnte Backup nicht laden!");
+    return;
+  }
+
+  const data = await res.json();
+  const content = decodeURIComponent(escape(atob(data.content)));
+  const backupData = JSON.parse(content);
+
+  localStorage.setItem('savedShows', JSON.stringify(backupData.shows || []));
+  localStorage.setItem('effectDatabase', JSON.stringify(backupData.database || []));
+  savedEffects = backupData.effects || [];
+
+  loadSavedShows();
+  updateDatabaseList();
+  updateSavedEffectsList();
+
+  alert("✅ Backup aus GitHub geladen!");
+}
+
+</script></body>
 </html>
