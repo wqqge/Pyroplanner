@@ -2249,7 +2249,7 @@ async function authFetch(url, options) {
 }
 
 async function githubBackup() {
-  ensureGithubConfig();
+  if (!ensureGithubConfigInteractive()) return;
 
   const backupData = {
     shows: JSON.parse(localStorage.getItem('savedShows') || '[]'),
@@ -2290,7 +2290,7 @@ async function githubBackup() {
 }
 
 async function githubRestore() {
-  ensureGithubConfig();
+  if (!ensureGithubConfigInteractive()) return;
 
   const url = `https://api.github.com/repos/${githubConfig.user}/${githubConfig.repo}/contents/${githubConfig.file}`;
 
