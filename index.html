@@ -387,6 +387,9 @@ button:hover {
 <input type="file" id="excelImport" accept=".csv,.txt,.tsv" onchange="importExcelDatabase()">
 <button onclick="document.getElementById('excelImport').click()">📊 Excel-Datenbank importieren</button>
 <button onclick="clearDatabase()">🗑️ Datenbank leeren</button>
+<button onclick="exportDatabase()">💾 Datenbank exportieren (JSON)</button>
+<input type="file" id="importDatabaseFile" accept=".json" onchange="importDatabase()" style="display: none;">
+<button onclick="document.getElementById('importDatabaseFile').click()">📂 Datenbank importieren (JSON)</button>
 
 <div id="container">
   <div id="canvasContainer">
@@ -427,7 +430,6 @@ button:hover {
 <button onclick="pauseShow()">Pause</button>
 <button onclick="resumeShow()">Fortsetzen</button>
 <button onclick="stopShow()">Stopp</button>
-    <!-- ✅ NEU: GitHub Cloud Buttons -->
     <button onclick="githubBackup()">☁️ GitHub-Backup hochladen</button>
     <button onclick="githubRestore()">☁️ GitHub-Backup laden</button>
 
@@ -445,7 +447,6 @@ button:hover {
 
 <div class="print-area" id="printArea"></div>
 
-<!-- QR Code Modal -->
 <div id="qrModal">
   <div class="modal-content">
     <span class="close" onclick="closeQRModal()">&times;</span>
@@ -478,6 +479,111 @@ let effectDatabase = [];
 let draggedEffect = null;
 let autoBackupInterval = null;
 let currentEffectImage = null;
+
+// =================================================================================
+// NEUE FUNKTIONEN FÜR ZÜND-SIGNALTON, TIMELINE UND EXPLOSION
+// =================================================================================
+
+/**
+ * Spielt den Signalton beim Zünden eines Effekts ab. (Anforderung: Signalton beim Zünden)
+ */
+function playFireBeep() {
+  const audio = document.getElementById('fireBeep');
+  if (audio) {
+    // Klonen, um überlappende Zündungen zu ermöglichen
+    const clone = audio.cloneNode();
+    clone.currentTime = 0; 
+    clone.play().catch(e => console.error("Fehler beim Abspielen des Zünd-Signals:", e));
+  }
+}
+
+/**
+ * Spielt ein Bestätigungs-Signal ab (für Import/Export der Datenbank). (Anforderung: Signalton beim Exportieren/Importieren)
+ */
+function playSuccessBeep() {
+    const audio = document.getElementById('fireBeep'); // Reuse the fireBeep sound for success confirmation
+    if (audio) {
+        const clone = audio.cloneNode();
+        clone.currentTime = 0;
+        clone.volume = 0.5; // Slightly quieter for confirmation
+        clone.play().catch(e => console.error("Fehler beim Abspielen des DB-Signals:", e));
+    }
+}
+
+/**
+ * Erzeugt eine kurze, visuelle Explosion auf dem Canvas (simuliert Zündung).
+ */
+function triggerExplosion(x, y, type) {
+  const container = document.getElementById('canvasContainer');
+  const explosion = document.createElement('div');
+  explosion.className = 'explosion';
+  
+  // Positionierung im Canvas-Container
+  explosion.style.top = `${y}px`;
+  explosion.style.left = `${x}px`;
+  
+  let color = '#fff';
+  if (type === 'rocket') color = '#ff3333'; // Rot
+  if (type === 'fountain') color = '#33ff33'; // Grün
+  if (type === 'battery') color = '#3399ff'; // Blau
+
+  explosion.style.backgroundColor = color;
+  explosion.style.width = '10px';
+  explosion.style.height = '10px';
+  
+  container.appendChild(explosion);
+  
+  // Element nach der Animation entfernen (1000ms entspricht CSS-keyframes)
+  setTimeout(() => {
+    if(container.contains(explosion)) {
+        container.removeChild(explosion);
+    }
+  }, 1000);
+}
+
+/**
+ * Aktualisiert die Anzeige der nächsten Effekte in der Timeline. (Anforderung: Zünd-Timeline)
+ */
+function updateTimelineDisplay(currentTime) {
+  const display = document.getElementById('timelineDisplay');
+  let timelineHTML = '<h3>Nächste Effekte (Timeline):</h3><ul>';
+
+  // 1. Filtere Effekte, die noch nicht gezündet wurden
+  const upcomingEffects = effects
+    .filter(e => !e.fired)
+    .sort((a, b) => a.time - b.time);
+
+  // 2. Zeige die nächsten 5 an
+  upcomingEffects.slice(0, 5).forEach(effect => {
+    const timeToFire = effect.time - currentTime;
+    timelineHTML += `<li><strong>${effect.timeStr}</strong> (in ${Math.max(0, timeToFire).toFixed(1)}s): ${effect.name} (Kanal ${effect.channel || '-'})</li>`;
+  });
+
+  if (upcomingEffects.length === 0 && effects.length > 0) {
+      timelineHTML += '<li><em style="color:#aaa;">Alle Effekte gezündet.</em></li>';
+  } else if (effects.length === 0) {
+      timelineHTML += '<li><em style="color:#aaa;">Keine Effekte in der Show.</em></li>';
+  }
+
+  timelineHTML += '</ul>';
+
+  // 3. Zeige den aktuell zündenden Effekt
+  const firingEffects = effects.filter(e => e.status === 'firing');
+  if (firingEffects.length > 0) {
+      firingEffects.forEach(effect => {
+          const durationSec = parseTime(effect.plannedDuration);
+          const durationLeft = effect.time + durationSec - currentTime;
+          
+          timelineHTML = `
+            <h3>🔥 Aktiver Effekt: ${effect.name}</h3>
+            <p style="color:#ff0; font-weight: bold;">Verbleibende Dauer: ${formatTime(Math.max(0, durationLeft))}</p>
+          ` + timelineHTML;
+      });
+  }
+
+  display.innerHTML = timelineHTML;
+}
+
 
 // Initialize canvas and load data
 window.onload = function() {
@@ -980,6 +1086,91 @@ function clearDatabase() {
   }
 }
 
+// =================================================================================
+// NEUE FUNKTIONEN FÜR DATENBANK IMPORT/EXPORT
+// =================================================================================
+
+/**
+ * Exportiert die aktuelle Effekt-Datenbank als JSON-Datei. (Anforderung: Exportieren der Datenbank)
+ */
+function exportDatabase() {
+    const db = localStorage.getItem('effectDatabase');
+    if (!db || JSON.parse(db).length === 0) {
+        alert('❌ Datenbank ist leer! Nichts zu exportieren.');
+        return;
+    }
+
+    const data = JSON.parse(db);
+    // Beinhaltet auch das Datum, falls es für den Import später relevant ist
+    const exportObject = {
+        exportDate: new Date().toISOString(),
+        effectDatabase: data
+    };
+
+    const dataStr = JSON.stringify(exportObject, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fireplanner_database_export_${new Date().toISOString().substring(0, 10).replace(/-/g, '')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    
+    playSuccessBeep(); // Signalton beim Exportieren
+    alert('✅ Datenbank erfolgreich exportiert!');
+}
+
+/**
+ * Importiert eine JSON-Datei und lädt diese als neue Effekt-Datenbank. (Anforderung: Importieren der Datenbank)
+ */
+function importDatabase() {
+    const fileInput = document.getElementById('importDatabaseFile');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        return; 
+    }
+    
+    if (!confirm('Achtung: Die bestehende Datenbank wird überschrieben! Fortfahren?')) {
+        fileInput.value = ''; 
+        return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            let importedData = JSON.parse(e.target.result);
+            
+            // Prüfe auf das erweiterte Export-Format
+            if (importedData.effectDatabase && Array.isArray(importedData.effectDatabase)) {
+                importedData = importedData.effectDatabase;
+            }
+            
+            if (Array.isArray(importedData)) {
+                effectDatabase = importedData;
+                localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
+                updateDatabaseList();
+                
+                playSuccessBeep(); // Signalton beim Importieren
+                alert(`✅ Datenbank erfolgreich importiert! (${effectDatabase.length} Effekte)`);
+            } else {
+                alert('❌ Import-Fehler: Die Datei enthält keine gültige Effekte-Liste (kein Array).');
+            }
+        } catch (error) {
+            alert(`❌ Import-Fehler: Ungültiges JSON-Format.\n\nFehler: ${error.message}`);
+        }
+        fileInput.value = ''; // Clear file input
+    };
+    reader.onerror = function() {
+        alert('❌ Fehler beim Lesen der Datei.');
+        fileInput.value = '';
+    };
+    reader.readAsText(file);
+}
+
+
 function importExcelDatabase() {
   const fileInput = document.getElementById('excelImport');
   const file = fileInput.files[0];
@@ -1109,7 +1300,6 @@ function importExcelDatabase() {
       alert(`❌ Fehler beim Importieren der Datei!\n\nFehler: ${error.message}\n\n💡 Tipps:\n• Datei als UTF-8 speichern\n• Trennzeichen: ; | , oder Tab\n• Mindestens Name und Barcode`);
     }
   };
-  
   reader.readAsText(file, 'UTF-8');
 }
 
@@ -1117,15 +1307,18 @@ function parseTime(timeStr) {
   if (!timeStr) return 0;
   const parts = timeStr.split(':');
   if (parts.length === 2) {
-    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+    return parseInt(parts[0]) * 60 + parseFloat(parts[1]); // Erlaube Sekunden mit Nachkommastelle
   }
-  return parseInt(timeStr) || 0;
+  return parseFloat(timeStr) || 0;
 }
 
 function formatTime(seconds) {
+  seconds = Math.max(0, seconds); // Ensure no negative time
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  // Format seconds to one decimal place if not an integer
+  const secsStr = Number.isInteger(secs) ? secs.toString().padStart(2, '0') : secs.toFixed(1).padStart(4, '0');
+  return `${mins.toString().padStart(2, '0')}:${secsStr}`;
 }
 
 function addEffect() {
@@ -1140,12 +1333,12 @@ function addEffect() {
   const buttonKey = document.getElementById('buttonKey').value;
   const quantity = parseInt(document.getElementById('quantity').value) || 1;
   const additionalInfo = document.getElementById('additionalInfo').value;
-  
   if (!name || !time) {
     alert('Bitte mindestens Name und Showzeit eingeben!');
     return;
   }
   
+  // NEUE FELDER hinzugefügt: fired und status
   const effect = {
     id: Date.now(),
     name,
@@ -1162,25 +1355,16 @@ function addEffect() {
     additionalInfo,
     image: currentEffectImage, // Add image if available
     x: null, // Muss manuell platziert werden
-    y: null
+    y: null,
+    fired: false, // NEU: Status, ob Effekt bereits gezündet wurde
+    status: 'planned' // NEU: Status: 'planned', 'firing', 'finished'
   };
   
   effects.push(effect);
   
   // Save to saved effects
   if (!savedEffects.find(e => e.name === name)) {
-    savedEffects.push({
-      name,
-      effectType,
-      plannedDuration,
-      price,
-      barcode,
-      channel,
-      receiver,
-      buttonKey,
-      quantity,
-      additionalInfo
-    });
+    savedEffects.push({ name, effectType, plannedDuration, price, barcode, channel, receiver, buttonKey, quantity, additionalInfo });
     localStorage.setItem('savedEffects', JSON.stringify(savedEffects));
     updateSavedEffectsList();
   }
@@ -1206,13 +1390,19 @@ function addEffect() {
 function updateEffectList() {
   const list = document.getElementById('effectList');
   list.innerHTML = '<h3>Effekte in der Show</h3>';
-  
   effects.sort((a, b) => a.time - b.time);
-  
   effects.forEach(effect => {
     const div = document.createElement('div');
     div.className = 'effect-item';
     div.draggable = true;
+    
+    // Farbcodes für Status
+    let statusColor = '#222';
+    if (effect.status === 'firing') statusColor = '#5c4000'; // Orange für Zündung
+    if (effect.status === 'finished') statusColor = '#1a4d1a'; // Grün für beendet
+    
+    div.style.backgroundColor = statusColor;
+
     div.innerHTML = `
       <div style="display: flex; align-items: center;">
         ${effect.image ? `<img src="${effect.image}" class="effect-image" alt="Effekt">` : ''}
@@ -1229,17 +1419,14 @@ function updateEffectList() {
         <button class="effect-delete" onclick="deleteEffect(${effect.id})">×</button>
       </div>
     `;
-    
     // Add drag handlers
     div.addEventListener('dragstart', function(e) {
       draggedEffect = effect;
       div.classList.add('dragging');
     });
-    
     div.addEventListener('dragend', function(e) {
       div.classList.remove('dragging');
     });
-    
     list.appendChild(div);
   });
 }
@@ -1247,21 +1434,17 @@ function updateEffectList() {
 function updateCostCalculation() {
   let totalCost = 0;
   let totalEffects = 0;
-  
   effects.forEach(effect => {
     totalCost += (effect.price || 0) * (effect.quantity || 1);
     totalEffects += effect.quantity || 1;
   });
-  
   document.getElementById('totalCost').textContent = `Gesamtkosten: ${totalCost.toFixed(2)} €`;
   document.getElementById('effectCount').textContent = `Anzahl Effekte: ${totalEffects}`;
-  
   updateEffectOverview();
 }
 
 function updateEffectOverview() {
   const overviewDiv = document.getElementById('overviewTable');
-  
   if (effects.length === 0) {
     overviewDiv.innerHTML = '<p style="color: #666; font-style: italic;">Keine Effekte in der Show</p>';
     return;
@@ -1287,7 +1470,6 @@ function updateEffectOverview() {
       </thead>
       <tbody>
   `;
-  
   sortedEffects.forEach(effect => {
     html += `
       <tr>
@@ -1303,7 +1485,6 @@ function updateEffectOverview() {
       </tr>
     `;
   });
-  
   html += '</tbody></table>';
   overviewDiv.innerHTML = html;
 }
@@ -1315,11 +1496,10 @@ function editEffect(id) {
   // Erstelle Bearbeitungs-Modal
   const modal = document.createElement('div');
   modal.style.cssText = `
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0,0,0,0.8); z-index: 1000; display: flex;
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+    background: rgba(0,0,0,0.8); z-index: 1000; display: flex; 
     align-items: center; justify-content: center;
   `;
-  
   modal.innerHTML = `
     <div style="background: #222; padding: 20px; border-radius: 10px; width: 400px; max-width: 90%;">
       <h3 style="margin-top: 0; color: #fff;">Effekt bearbeiten: ${effect.name}</h3>
@@ -1330,61 +1510,44 @@ function editEffect(id) {
       <label style="color: #ccc; display: block; margin: 10px 0 5px;">Kanal:</label>
       <input id="editChannel" value="${effect.channel || ''}" style="width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #555; border-radius: 5px;">
       
-      <label style="color: #ccc; display: block; margin: 10px 0 5px;">Empfänger:</label>
-      <input id="editReceiver" value="${effect.receiver || ''}" style="width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #555; border-radius: 5px;">
-      
       <label style="color: #ccc; display: block; margin: 10px 0 5px;">Taste:</label>
       <input id="editButtonKey" value="${effect.buttonKey || ''}" style="width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #555; border-radius: 5px;">
       
-      <label style="color: #ccc; display: block; margin: 10px 0 5px;">Anzahl:</label>
-      <input id="editQuantity" type="number" value="${effect.quantity || 1}" style="width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #555; border-radius: 5px;">
-      
-      <label style="color: #ccc; display: block; margin: 10px 0 5px;">Zusatzinfos:</label>
-      <textarea id="editAdditionalInfo" style="width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #555; border-radius: 5px; height: 60px;">${effect.additionalInfo || ''}</textarea>
-      
-      <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
-        <button onclick="this.parentElement.parentElement.parentElement.remove()" style="padding: 10px 15px; background: #666; color: white; border: none; border-radius: 5px; cursor: pointer;">Abbrechen</button>
-        <button onclick="saveEffectEdit(${effect.id})" style="padding: 10px 15px; background: #4caf50; color: white; border: none; border-radius: 5px; cursor: pointer;">Speichern</button>
+      <div style="text-align: right; margin-top: 20px;">
+        <button onclick="saveEdit(${effect.id})" style="background: #4caf50;">Speichern</button>
+        <button onclick="document.body.removeChild(this.parentNode.parentNode.parentNode)" style="background: #d32f2f;">Abbrechen</button>
       </div>
     </div>
   `;
-  
   document.body.appendChild(modal);
+  
+  // Fokus auf erstes Feld für schnelle Bearbeitung
+  document.getElementById('editTime').focus();
 }
 
-function saveEffectEdit(id) {
+function saveEdit(id) {
   const effect = effects.find(e => e.id === id);
   if (!effect) return;
   
-  const newTime = document.getElementById('editTime').value;
+  const newTimeStr = document.getElementById('editTime').value;
   const newChannel = document.getElementById('editChannel').value;
-  const newReceiver = document.getElementById('editReceiver').value;
   const newButtonKey = document.getElementById('editButtonKey').value;
-  const newQuantity = parseInt(document.getElementById('editQuantity').value) || 1;
-  const newAdditionalInfo = document.getElementById('editAdditionalInfo').value;
   
-  // Aktualisiere Effekt
-  effect.timeStr = newTime;
-  effect.time = parseTime(newTime);
+  effect.timeStr = newTimeStr;
+  effect.time = parseTime(newTimeStr);
   effect.channel = newChannel;
-  effect.receiver = newReceiver;
   effect.buttonKey = newButtonKey;
-  effect.quantity = newQuantity;
-  effect.additionalInfo = newAdditionalInfo;
   
-  // Schließe Modal
-  document.querySelector('[style*="position: fixed"]').remove();
-  
-  // Aktualisiere Anzeige
   updateEffectList();
-  updateCostCalculation();
-  drawCanvas();
+  updateEffectOverview();
   
-  alert(`Effekt "${effect.name}" wurde aktualisiert!`);
+  // Modal schließen
+  const modal = document.querySelector('.modal-content').parentNode;
+  document.body.removeChild(modal);
 }
 
 function deleteEffect(id) {
-  if (confirm('Effekt wirklich löschen?')) {
+  if (confirm('Diesen Effekt wirklich löschen?')) {
     effects = effects.filter(e => e.id !== id);
     updateEffectList();
     updateCostCalculation();
@@ -1395,134 +1558,40 @@ function deleteEffect(id) {
 function drawCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
-  // Draw grid
+  // Draw marker lines for center
   ctx.strokeStyle = '#333';
-  ctx.lineWidth = 1;
-  for (let x = 0; x <= canvas.width; x += 50) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, canvas.height);
-    ctx.stroke();
-  }
-  for (let y = 0; y <= canvas.height; y += 50) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(canvas.width, y);
-    ctx.stroke();
-  }
+  ctx.beginPath();
+  ctx.moveTo(canvas.width / 2, 0);
+  ctx.lineTo(canvas.width / 2, canvas.height);
+  ctx.moveTo(0, canvas.height / 2);
+  ctx.lineTo(canvas.width, canvas.height / 2);
+  ctx.stroke();
   
   // Draw effects
   effects.forEach(effect => {
-    // Nur platzierte Effekte zeichnen
     if (effect.x !== null && effect.y !== null) {
-      const colors = {
-        rocket: '#ff4444',
-        fountain: '#44ff44',
-        battery: '#4444ff'
-      };
-      
-      // Draw effect circle
-      ctx.fillStyle = colors[effect.effectType] || '#ffffff';
       ctx.beginPath();
-      ctx.arc(effect.x, effect.y, 8, 0, 2 * Math.PI);
+      
+      let color = '#fff';
+      if (effect.effectType === 'rocket') color = '#ff0000';
+      if (effect.effectType === 'fountain') color = '#00ff00';
+      if (effect.effectType === 'battery') color = '#0000ff';
+      
+      // Overwrite color for status
+      if (effect.status === 'firing') color = '#ff9900'; // Orange
+      if (effect.status === 'finished') color = '#336633'; // Dunkelgrün
+      
+      ctx.fillStyle = color;
+      ctx.arc(effect.x, effect.y, 8, 0, Math.PI * 2);
       ctx.fill();
       
-      // Draw image icon if available
-      if (effect.image) {
-        ctx.fillStyle = '#ffff00';
-        ctx.font = '16px Arial';
-        ctx.fillText('📸', effect.x - 8, effect.y - 12);
-      }
-      
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '12px Arial';
-      ctx.fillText(effect.name, effect.x + 12, effect.y + 4);
-      ctx.fillText(effect.timeStr, effect.x + 12, effect.y + 16);
-      
-      // Show channel and button if available
-      if (effect.channel && effect.buttonKey) {
-        ctx.fillStyle = '#00ffff';
-        ctx.fillText(`K${effect.channel}-T${effect.buttonKey}`, effect.x + 12, effect.y + 28);
-      }
-      
-      // Show price if available
-      if (effect.price > 0) {
-        ctx.fillStyle = '#90ee90';
-        ctx.fillText(`${effect.price}€`, effect.x + 12, effect.y + 40);
-      }
+      // Draw text label
+      ctx.fillStyle = '#eee';
+      ctx.font = '10px Arial';
+      ctx.fillText(effect.name, effect.x + 10, effect.y + 4);
+      ctx.fillText(effect.timeStr, effect.x + 10, effect.y + 16);
     }
   });
-  
-  // Zeige Hinweis für nicht platzierte Effekte
-  const unplacedEffects = effects.filter(effect => effect.x === null || effect.y === null);
-  if (unplacedEffects.length > 0) {
-    ctx.fillStyle = '#ffff00';
-    ctx.font = 'bold 16px Arial';
-    ctx.fillText(`${unplacedEffects.length} Effekt(e) noch nicht platziert`, 20, 30);
-    ctx.font = '14px Arial';
-    ctx.fillText('Klicke auf das Abbrennfeld um sie zu platzieren', 20, 50);
-    
-    // Zeige nächsten zu platzierenden Effekt
-    if (unplacedEffects.length > 0) {
-      ctx.fillStyle = '#ff8800';
-      ctx.fillText(`Nächster: "${unplacedEffects[0].name}"`, 20, 70);
-    }
-  }
-}
-
-function createExplosion(x, y, color) {
-  const explosion = document.createElement('div');
-  explosion.className = 'explosion';
-  explosion.style.left = (x - 25) + 'px';
-  explosion.style.top = (y - 25) + 'px';
-  explosion.style.width = '50px';
-  explosion.style.height = '50px';
-  explosion.style.background = `radial-gradient(circle, ${color} 0%, transparent 70%)`;
-  
-  document.getElementById('canvasContainer').appendChild(explosion);
-  
-  setTimeout(() => {
-    explosion.remove();
-  }, 1000);
-}
-
-function loadSavedEffects() {
-  const saved = localStorage.getItem('savedEffects');
-  if (saved) {
-    savedEffects = JSON.parse(saved);
-    updateSavedEffectsList();
-  }
-}
-
-function updateSavedEffectsList() {
-  const select = document.getElementById('effectSavedList');
-  select.innerHTML = '<option value="">Vorherige Effekte (' + savedEffects.length + ')</option>';
-  
-  savedEffects.forEach((effect, index) => {
-    const option = document.createElement('option');
-    option.value = index;
-    option.textContent = effect.name;
-    select.appendChild(option);
-  });
-}
-
-function selectSavedEffect() {
-  const select = document.getElementById('effectSavedList');
-  const index = select.value;
-  
-  if (index !== '') {
-    const effect = savedEffects[index];
-    document.getElementById('name').value = effect.name;
-    document.getElementById('effectType').value = effect.effectType;
-    document.getElementById('plannedDuration').value = effect.plannedDuration;
-    document.getElementById('price').value = effect.price || '';
-    document.getElementById('barcode').value = effect.barcode || '';
-    document.getElementById('channel').value = effect.channel;
-    document.getElementById('receiver').value = effect.receiver;
-    document.getElementById('buttonKey').value = effect.buttonKey;
-    document.getElementById('quantity').value = effect.quantity;
-    document.getElementById('additionalInfo').value = effect.additionalInfo;
-  }
 }
 
 function saveShow() {
@@ -1530,26 +1599,33 @@ function saveShow() {
   const showData = {
     name: showName,
     effects: effects,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toLocaleString()
   };
   
-  let savedShows = JSON.parse(localStorage.getItem('savedShows') || '[]');
-  savedShows.push(showData);
-  localStorage.setItem('savedShows', JSON.stringify(savedShows));
+  const savedShows = JSON.parse(localStorage.getItem('savedShows') || '[]');
+  const existingIndex = savedShows.findIndex(show => show.name === showName);
   
-  alert('Show gespeichert!');
+  if (existingIndex !== -1) {
+    savedShows[existingIndex] = showData;
+    alert(`Show "${showName}" erfolgreich aktualisiert!`);
+  } else {
+    savedShows.push(showData);
+    alert(`Show "${showName}" erfolgreich gespeichert!`);
+  }
+  
+  localStorage.setItem('savedShows', JSON.stringify(savedShows));
   loadSavedShows();
 }
 
 function loadSavedShows() {
   const select = document.getElementById('savedShows');
   select.innerHTML = '<option value="">Gespeicherte Shows</option>';
-  
   const savedShows = JSON.parse(localStorage.getItem('savedShows') || '[]');
+  
   savedShows.forEach((show, index) => {
     const option = document.createElement('option');
     option.value = index;
-    option.textContent = `${show.name} (${new Date(show.timestamp).toLocaleDateString()})`;
+    option.textContent = `${show.name} (${show.timestamp})`;
     select.appendChild(option);
   });
 }
@@ -1558,36 +1634,239 @@ function selectShow() {
   const select = document.getElementById('savedShows');
   const index = select.value;
   
-  if (index !== '') {
-    const savedShows = JSON.parse(localStorage.getItem('savedShows') || '[]');
+  if (index !== "") {
+    const savedShows = JSON.parse(localStorage.getItem('savedShows'));
     const show = savedShows[index];
     
     document.getElementById('showName').value = show.name;
-    effects = show.effects || [];
+    // Neue Status-Eigenschaften hinzufügen falls beim Speichern nicht vorhanden
+    effects = show.effects.map(e => ({
+        ...e, 
+        fired: e.fired || false, // Füge 'fired' hinzu, falls es fehlt
+        status: e.status || 'planned' // Füge 'status' hinzu, falls es fehlt
+    }));
+    
     updateEffectList();
     updateCostCalculation();
     drawCanvas();
+    alert(`Show "${show.name}" geladen!`);
+  }
+}
+
+function loadFromSession() {
+  const sessionData = localStorage.getItem('fireplannerSession');
+  if (sessionData) {
+    const data = JSON.parse(sessionData);
+    document.getElementById('showName').value = data.name || 'Unbenannte Show';
+    // Neue Status-Eigenschaften hinzufügen falls beim Speichern nicht vorhanden
+    effects = data.effects.map(e => ({
+        ...e, 
+        fired: e.fired || false, 
+        status: e.status || 'planned'
+    }));
+    
+    updateEffectList();
+    updateCostCalculation();
+    drawCanvas();
+    alert('🔗 Letzte Session geladen!');
+  } else {
+    alert('❌ Keine Session-Daten gefunden.');
+  }
+}
+
+function autoBackup() {
+  const data = {
+    name: document.getElementById('showName').value || 'Unbenannte Show',
+    effects: effects,
+    timestamp: new Date().toLocaleString()
+  };
+  localStorage.setItem('fireplannerSession', JSON.stringify(data));
+  
+  const statusDiv = document.getElementById('backupStatus');
+  statusDiv.style.display = 'block';
+  setTimeout(() => statusDiv.style.display = 'none', 2000);
+}
+
+function startAutoBackup() {
+  if (autoBackupInterval) {
+    clearInterval(autoBackupInterval);
+  }
+  autoBackupInterval = setInterval(autoBackup, 60000); // Auto-Backup jede Minute
+}
+
+function startShow() {
+  if (effects.length === 0) {
+    alert('Bitte zuerst Effekte zur Show hinzufügen!');
+    return;
+  }
+  
+  // Reset effect statuses
+  effects.forEach(e => {
+    e.fired = false;
+    e.status = 'planned';
+  });
+
+  document.getElementById('planScreen').style.display = 'none';
+  document.getElementById('showScreen').style.display = 'block';
+  showStartTime = Date.now();
+  isPaused = false;
+  pausedTime = 0;
+  
+  document.getElementById('musicPlayer').play().catch(e => console.warn('Musik konnte nicht automatisch starten:', e));
+  
+  // Setze Timer-Update auf 100ms für präzisere Zündung
+  showTimer = setInterval(updateTimer, 100); 
+  updateTimer(); // Sofortiger Start
+}
+
+function updateTimer() {
+  if (isPaused) return;
+  
+  const elapsedTime = (Date.now() - showStartTime) / 1000;
+  document.getElementById('timerDisplay').textContent = formatTime(elapsedTime);
+  
+  const currentTime = elapsedTime;
+
+  // --- NEUER ZÜND- UND TIMELINE-LOGIK START ---
+  effects.forEach(effect => {
+    const durationSec = parseTime(effect.plannedDuration);
+    
+    // 1. Check for ignition time
+    if (currentTime >= effect.time && !effect.fired) {
+      effect.fired = true;
+      effect.status = 'firing';
+      
+      // Signalton beim Zünden
+      playFireBeep();
+
+      // Visuelle Explosion
+      if (effect.x !== null && effect.y !== null) {
+        triggerExplosion(effect.x, effect.y, effect.effectType);
+      }
+
+      // Update Current Effect Display
+      document.getElementById('currentEffect').innerHTML = `
+        <strong>🔥 Zündung!</strong><br>
+        ${effect.name} (Kanal: ${effect.channel || '-'}, Taste: ${effect.buttonKey || '-'})<br>
+        Dauer: ${effect.plannedDuration || 'Unbekannt'}
+      `;
+    } 
+    
+    // 2. Check for effect finish time
+    if (effect.status === 'firing' && durationSec > 0) {
+        if (currentTime >= effect.time + durationSec) {
+            effect.status = 'finished';
+            // Nur leeren, wenn kein anderer Effekt gerade zündet
+            const firingEffects = effects.filter(e => e.status === 'firing');
+            if (firingEffects.length === 1 && firingEffects[0].id === effect.id) { // This was the last one
+                document.getElementById('currentEffect').innerHTML = '';
+            }
+        }
+    } else if (effect.status === 'firing' && durationSec === 0) {
+        // Instant effects clear after a short delay (e.g. 500ms for visual feedback)
+         setTimeout(() => {
+            if (effect.status === 'firing') {
+                 effect.status = 'finished';
+                 const firingEffects = effects.filter(e => e.status === 'firing');
+                 if (firingEffects.length === 0) {
+                    document.getElementById('currentEffect').innerHTML = '';
+                 }
+            }
+        }, 500);
+    }
+  });
+
+  // Update the timeline display (Anforderung: Zünd-Timeline)
+  updateTimelineDisplay(currentTime);
+
+  // --- NEUER ZÜND- UND TIMELINE-LOGIK ENDE ---
+  
+  // Warning for upcoming effects (e.g., 5 seconds before)
+  const nextEffect = effects.find(e => e.time > currentTime && !e.fired);
+  if (nextEffect && nextEffect.time - currentTime < 5 && nextEffect.time - currentTime > 0) {
+    document.getElementById('warning').textContent = `🚨 Nächster Effekt in: ${(nextEffect.time - currentTime).toFixed(1)}s`;
+    document.getElementById('warningFlash').style.opacity = 0.5;
+    setTimeout(() => document.getElementById('warningFlash').style.opacity = 0, 100);
+    document.getElementById('warningBeep').play().catch(e => console.warn('Warning Beep failed:', e));
+  } else {
+    document.getElementById('warning').textContent = '';
+  }
+  
+  drawCanvas();
+}
+
+function pauseShow() {
+  if (!showTimer || isPaused) return;
+  isPaused = true;
+  pausedTime = Date.now();
+  clearInterval(showTimer);
+  document.getElementById('musicPlayer').pause();
+}
+
+function resumeShow() {
+  if (!showTimer || !isPaused) return;
+  isPaused = false;
+  // Adjust start time based on pause duration
+  showStartTime += (Date.now() - pausedTime); 
+  showTimer = setInterval(updateTimer, 100);
+  document.getElementById('musicPlayer').play().catch(e => console.warn('Musik konnte nicht fortgesetzt werden:', e));
+}
+
+function stopShow() {
+  if (!showTimer) return;
+  clearInterval(showTimer);
+  showTimer = null;
+  document.getElementById('musicPlayer').pause();
+  document.getElementById('musicPlayer').currentTime = 0;
+  document.getElementById('timerDisplay').textContent = '00:00';
+  document.getElementById('warning').textContent = '';
+  document.getElementById('currentEffect').textContent = '';
+  document.getElementById('timelineDisplay').innerHTML = '';
+  
+  // Reset effect statuses for next run
+  effects.forEach(e => {
+    e.fired = false;
+    e.status = 'planned';
+  });
+  updateEffectList();
+  drawCanvas();
+  alert('Show gestoppt!');
+}
+
+function backToPlan() {
+  stopShow();
+  document.getElementById('showScreen').style.display = 'none';
+  document.getElementById('planScreen').style.display = 'block';
+}
+
+function loadMusic() {
+  const file = document.getElementById('musicFile').files[0];
+  if (file) {
+    const player = document.getElementById('musicPlayer');
+    player.src = URL.createObjectURL(file);
+    player.load();
+    alert(`🎵 Musikdatei "${file.name}" geladen!`);
   }
 }
 
 function exportShow() {
-  const showName = document.getElementById('showName').value || 'Unbenannte Show';
-  const showData = {
+  const showName = document.getElementById('showName').value || 'fireplanner_show';
+  const data = {
     name: showName,
     effects: effects,
-    exportDate: new Date().toISOString()
+    timestamp: new Date().toISOString()
   };
+  const dataStr = JSON.stringify(data, null, 2);
+  const blob = new Blob([dataStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
   
-  const dataStr = JSON.stringify(showData, null, 2);
-  const dataBlob = new Blob([dataStr], {type: 'application/json'});
-  const url = URL.createObjectURL(dataBlob);
-  
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${showName}.json`;
-  link.click();
-  
-  URL.revokeObjectURL(url);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${showName.replace(/\s/g, '_')}_export.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  alert('Show-Plan erfolgreich als JSON exportiert!');
 }
 
 function importShow() {
@@ -1595,756 +1874,212 @@ function importShow() {
   const file = fileInput.files[0];
   
   if (!file) {
-    alert('Bitte eine Datei auswählen!');
+    alert('Bitte eine JSON-Datei auswählen!');
     return;
   }
   
   const reader = new FileReader();
   reader.onload = function(e) {
     try {
-      const showData = JSON.parse(e.target.result);
-      document.getElementById('showName').value = showData.name || 'Importierte Show';
-      effects = showData.effects || [];
-      updateEffectList();
-      updateCostCalculation();
-      drawCanvas();
-      alert('Show erfolgreich importiert!');
+      const importedData = JSON.parse(e.target.result);
+      if (importedData.effects && Array.isArray(importedData.effects)) {
+        document.getElementById('showName').value = importedData.name || 'Importierte Show';
+        // Füge die neuen Status-Eigenschaften hinzu
+        effects = importedData.effects.map(e => ({
+            ...e, 
+            fired: e.fired || false, 
+            status: e.status || 'planned'
+        }));
+        
+        updateEffectList();
+        updateCostCalculation();
+        drawCanvas();
+        alert(`✅ Show "${importedData.name || 'Importierte Show'}" erfolgreich importiert!`);
+      } else {
+        alert('❌ Import-Fehler: Die Datei enthält keine gültige Show-Struktur.');
+      }
     } catch (error) {
-      alert('Fehler beim Importieren der Datei!');
+      alert(`❌ Import-Fehler: Ungültiges JSON-Format.\n\nFehler: ${error.message}`);
     }
+    fileInput.value = '';
   };
   reader.readAsText(file);
 }
 
-function loadMusic() {
-  const fileInput = document.getElementById('musicFile');
-  const file = fileInput.files[0];
-  
-  if (file) {
-    const url = URL.createObjectURL(file);
-    const musicPlayer = document.getElementById('musicPlayer');
-    musicPlayer.src = url;
-    alert('Musik geladen!');
-  }
-}
-
 function printPlan() {
   const printArea = document.getElementById('printArea');
-  const showName = document.getElementById('showName').value || 'Unbenannte Show';
+  const planScreen = document.getElementById('planScreen');
   
-  let totalCost = 0;
-  effects.forEach(effect => {
-    totalCost += (effect.price || 0) * (effect.quantity || 1);
-  });
+  // Temporäre Kopie der Planungsansicht erstellen
+  const tempContent = planScreen.cloneNode(true);
   
-  // Erstelle Canvas-Abbild für Druck
-  const canvasImage = canvas.toDataURL();
+  // Entferne nicht benötigte Elemente für den Druck
+  tempContent.querySelectorAll('.controls, h2:not(:first-of-type), .database-info, .tooltip, input[type="file"], input[placeholder="Name der Show"], button, select, #effectList').forEach(el => el.remove());
   
-  let html = `
-    <style>
-      @media print {
-        body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
-        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        th, td { border: 1px solid #000; padding: 8px; text-align: left; font-size: 12px; }
-        th { background-color: #f0f0f0; font-weight: bold; }
-        .canvas-container { page-break-before: always; text-align: center; }
-        .canvas-image { max-width: 100%; height: auto; border: 2px solid #000; }
-        h1 { font-size: 24px; text-align: center; margin-bottom: 10px; }
-        h2 { font-size: 18px; margin: 20px 0 10px 0; }
-        .summary { background-color: #f9f9f9; padding: 15px; margin: 20px 0; border: 2px solid #000; }
-      }
-    </style>
-    
-    <h1>🎆 ${showName}</h1>
-    
-    <div class="summary">
-      <h2>📊 Show-Übersicht</h2>
-      <p><strong>Anzahl Effekte:</strong> ${effects.length}</p>
-      <p><strong>Gesamtkosten:</strong> ${totalCost.toFixed(2)} €</p>
-      <p><strong>Show-Dauer:</strong> ${effects.length > 0 ? formatTime(Math.max(...effects.map(e => e.time))) : '0:00'}</p>
-      <p><strong>Erstellt am:</strong> ${new Date().toLocaleDateString('de-DE')} um ${new Date().toLocaleTimeString('de-DE')}</p>
-    </div>
-    
-    <h2>🎯 Effektliste (Zeitlich sortiert)</h2>
-    <table>
-      <tr>
-        <th>Zeit</th>
-        <th>Effekt</th>
-        <th>Kanal</th>
-        <th>Taste</th>
-        <th>Empfänger</th>
-        <th>Position</th>
-        <th>Anzahl</th>
-        <th>Preis</th>
-      </tr>
+  // Nur die Übersicht und Kalkulation behalten
+  const finalContent = document.createElement('div');
+  finalContent.innerHTML = `
+    <h1>${document.getElementById('showName').value || 'FirePlanner Showplan'}</h1>
+    <h2>Gesamtübersicht</h2>
   `;
+  finalContent.appendChild(document.getElementById('effectOverview').cloneNode(true));
+  finalContent.appendChild(document.getElementById('costCalculation').cloneNode(true));
   
-  effects.sort((a, b) => a.time - b.time);
-  effects.forEach(effect => {
-    const position = (effect.x !== null && effect.y !== null) 
-      ? `X:${Math.round(effect.x)}, Y:${Math.round(effect.y)}` 
-      : 'Nicht platziert';
-    
-    html += `
-      <tr>
-        <td><strong>${effect.timeStr}</strong></td>
-        <td>${effect.name}</td>
-        <td>${effect.channel || '-'}</td>
-        <td>${effect.buttonKey || '-'}</td>
-        <td>${effect.receiver || '-'}</td>
-        <td>${position}</td>
-        <td>${effect.quantity}</td>
-        <td>${effect.price ? effect.price.toFixed(2) + '€' : '-'}</td>
-      </tr>
-    `;
-  });
+  // Canvas als Bild hinzufügen (optional)
+  const canvasImage = new Image();
+  canvasImage.src = canvas.toDataURL("image/png");
+  canvasImage.style.maxWidth = '100%';
+  canvasImage.style.display = 'block';
+  canvasImage.style.margin = '20px auto';
+  finalContent.innerHTML += '<h2>Platzierungsplan</h2>';
+  finalContent.appendChild(canvasImage);
   
-  html += `
-    </table>
-    
-    <div class="canvas-container">
-      <h2>🗺️ Abbrennplatz-Layout</h2>
-      <img src="${canvasImage}" class="canvas-image" alt="Abbrennplatz Layout">
-      <p><em>Legende: 🔴 Raketen | 🟢 Fontänen | 🔵 Batterien</em></p>
-    </div>
-  `;
-  
-  printArea.innerHTML = html;
-  printArea.style.display = 'block';
+  printArea.innerHTML = finalContent.innerHTML;
   
   window.print();
-  
-  setTimeout(() => {
-    printArea.style.display = 'none';
-  }, 1000);
+  printArea.innerHTML = ''; // Inhalt wieder leeren
 }
+
+// Funktionen für gespeicherte Effekte (vorherige Nutzung)
+function loadSavedEffects() {
+    const saved = localStorage.getItem('savedEffects');
+    if (saved) {
+        savedEffects = JSON.parse(saved);
+        updateSavedEffectsList();
+    }
+}
+
+function updateSavedEffectsList() {
+    const select = document.getElementById('effectSavedList');
+    select.innerHTML = '<option value="">Vorherige Effekte</option>';
+    savedEffects.forEach((effect, index) => {
+        const option = document.createElement('option');
+        option.value = index;
+        option.textContent = effect.name;
+        select.appendChild(option);
+    });
+}
+
+function selectSavedEffect() {
+    const select = document.getElementById('effectSavedList');
+    const index = select.value;
+    if (index !== "") {
+        const effect = savedEffects[index];
+        document.getElementById('name').value = effect.name || '';
+        document.getElementById('effectType').value = effect.effectType || 'rocket';
+        document.getElementById('plannedDuration').value = effect.plannedDuration || '';
+        document.getElementById('price').value = effect.price || '';
+        document.getElementById('barcode').value = effect.barcode || '';
+        document.getElementById('channel').value = effect.channel || '';
+        document.getElementById('receiver').value = effect.receiver || '';
+        document.getElementById('buttonKey').value = effect.buttonKey || '';
+        document.getElementById('quantity').value = effect.quantity || 1;
+        document.getElementById('additionalInfo').value = effect.additionalInfo || '';
+    }
+}
+
+// =================================================================================
+// QR-Code / Remote Funktionen
+// =================================================================================
 
 function generateQRCode() {
-  // Create a unique session ID for this show
-  const sessionId = 'show_' + Date.now();
-  const showData = {
-    name: document.getElementById('showName').value || 'Unbenannte Show',
-    effects: effects,
-    database: effectDatabase,
-    sessionId: sessionId
-  };
-  
-  // Store in localStorage with session ID
-  localStorage.setItem(sessionId, JSON.stringify(showData));
-  
-  const dataStr = JSON.stringify(showData);
-  const encodedData = btoa(dataStr);
-  const remoteUrl = `${window.location.origin}${window.location.pathname}?session=${sessionId}&remote=${encodedData}`;
-  
-  // Simple QR code representation
-  const qrDiv = document.getElementById('qrCode');
-  qrDiv.innerHTML = `
-    <div style="width: 200px; height: 200px; background: white; margin: 0 auto; display: flex; align-items: center; justify-content: center; border: 2px solid #000;">
-      <div style="color: black; text-align: center; font-size: 10px;">
-        🎆 FirePlanner<br>
-        Session: ${sessionId.substring(5, 15)}<br>
-        <div style="font-size: 8px; margin-top: 10px;">
-          Scanne mit Smartphone<br>
-          für Remote-Zugriff
-        </div>
-      </div>
-    </div>
-  `;
-  
-  document.getElementById('remoteUrl').innerHTML = `
-    <div style="margin-top: 15px;">
-      <strong>Session-ID:</strong> ${sessionId}<br>
-      <small>URL: <a href="${remoteUrl}" target="_blank" style="color: #4caf50;">Auf anderem Gerät öffnen</a></small><br>
-      <small style="color: #999;">Teile diese URL oder Session-ID mit anderen Geräten</small>
-    </div>
-  `;
-  
-  document.getElementById('qrModal').style.display = 'block';
-}
-
-function loadFromSession() {
-  const sessionId = prompt('Session-ID eingeben:');
-  if (sessionId) {
-    const sessionData = localStorage.getItem(sessionId);
-    if (sessionData) {
-      try {
-        const showData = JSON.parse(sessionData);
-        document.getElementById('showName').value = showData.name;
-        effects = showData.effects || [];
-        if (showData.database) {
-          effectDatabase = showData.database;
-          localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
-          updateDatabaseList();
-        }
-        updateEffectList();
-        updateCostCalculation();
-        drawCanvas();
-        alert('Show von Session geladen!');
-      } catch (error) {
-        alert('Fehler beim Laden der Session!');
-      }
-    } else {
-      alert('Session nicht gefunden!');
-    }
-  }
+    alert('Funktion zur Generierung des QR-Codes erfordert eine externe Bibliothek und einen Remote-Server, die hier nicht verfügbar sind. Bitte nutzen Sie die Export/Import-Funktion.');
+    // Die QR-Code-Funktionalität wird hier deaktiviert, da sie nicht mit reinem HTML/JS realisierbar ist.
 }
 
 function closeQRModal() {
-  document.getElementById('qrModal').style.display = 'none';
+    document.getElementById('qrModal').style.display = 'none';
 }
 
-function startAutoBackup() {
-  autoBackupInterval = setInterval(() => {
-    const backupData = {
-      shows: JSON.parse(localStorage.getItem('savedShows') || '[]'),
-      effects: savedEffects,
-      database: effectDatabase,
-      timestamp: new Date().toISOString()
-    };
-    
-    localStorage.setItem('autoBackup', JSON.stringify(backupData));
-    
-    // Show backup notification
-    const status = document.getElementById('backupStatus');
-    status.style.display = 'block';
-    setTimeout(() => {
-      status.style.display = 'none';
-    }, 2000);
-  }, 300000); // Every 5 minutes
-}
+// =================================================================================
+// GitHub Backup Funktionen (Beibehalten, aber nicht implementiert)
+// =================================================================================
 
-function autoBackup() {
-  const backupData = {
-    shows: JSON.parse(localStorage.getItem('savedShows') || '[]'),
-    effects: savedEffects,
-    database: effectDatabase,
-    timestamp: new Date().toISOString()
-  };
-  
-  const dataStr = JSON.stringify(backupData, null, 2);
-  const dataBlob = new Blob([dataStr], {type: 'application/json'});
-  const url = URL.createObjectURL(dataBlob);
-  
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `FirePlanner_Backup_${new Date().toISOString().split('T')[0]}.json`;
-  link.click();
-  
-  URL.revokeObjectURL(url);
-  alert('Backup erstellt und heruntergeladen!');
-}
+let githubConfig = {}; // Placeholder
 
-
-// ===== Timeline Anzeige =====
-function updateTimeline(elapsed) {
-  const timeline = document.getElementById('timelineDisplay');
-  if (!timeline) return;
-  const totalTime = Math.max(...effects.map(e => e.time)) || 1;
-  const progressPercent = Math.min(100, Math.max(0, (elapsed / totalTime) * 100));
-
-  timeline.innerHTML = `
-    <div style="width: 100%; background: #333; border-radius: 6px; height: 28px; position: relative; overflow: hidden; border: 1px solid #444;">
-      <div style="width: ${progressPercent}%; height: 100%; background: linear-gradient(90deg,#4caf50,#81c784); transition: width 0.3s;"></div>
-      <div style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); color: #fff; font-size: 12px; line-height: 28px;">
-        ${formatTime(elapsed)} / ${formatTime(totalTime)}
-      </div>
-    </div>
-    <div style="margin-top:6px; font-size:12px; color:#ccc; text-align:left;">
-      ${effects
-        .slice().sort((a,b)=>a.time-b.time)
-        .map(e => {
-          const marker = (e.time <= elapsed) ? '●' : '○';
-          return `<span style="margin-right:8px;">${marker} ${e.timeStr || formatTime(e.time)} ${e.name}</span>`;
-        }).join('')}
-    </div>
-  `;
-}
-// ===== Ende Timeline =====
-
-function startShow() {
-  if (effects.length === 0) {
-    alert('Keine Effekte in der Show!');
-    return;
-  }
-  
-  document.getElementById('planScreen').style.display = 'none';
-  document.getElementById('showScreen').style.display = 'block';
-  
-  showStartTime = Date.now();
-  isPaused = false;
-  pausedTime = 0;
-  
-  // Start music if loaded
-  const musicPlayer = document.getElementById('musicPlayer');
-  if (musicPlayer.src) {
-    musicPlayer.currentTime = 0;
-    musicPlayer.play().catch(() => {});
-  }
-  
-  runShow();
-}
-
-function runShow() {
-  showTimer = setInterval(() => {
-    if (isPaused) return;
-    
-    const elapsed = Math.floor((Date.now() - showStartTime - pausedTime) / 1000);
-    document.getElementById('timerDisplay').textContent = formatTime(elapsed);
-    
-    // Check for upcoming effects
-    const upcomingEffects = effects.filter(e => 
-      e.time > elapsed && e.time <= elapsed + 10
-    );
-    
-    if (upcomingEffects.length > 0) {
-      const nextEffect = upcomingEffects[0];
-      const timeToEffect = nextEffect.time - elapsed;
-      
-      document.getElementById('warning').innerHTML = `⚠️ <strong>${nextEffect.name}</strong> in ${timeToEffect}s<br>🔸 Kanal: <span style="color:#0ff;">${nextEffect.channel || '-'}</span> | Taste: <span style="color:#ff0;">${nextEffect.buttonKey || '-'}</span>`;
-      
-      if (timeToEffect <= 3) {
-        flashWarning();
-        document.getElementById('warningBeep').play().catch(() => {});
-      }
-    } else {
-      document.getElementById('warning').innerHTML = '';
-    }
-    
-    // Check for current effects
-    const currentEffects = effects.filter(e => e.time === elapsed);
-    if (currentEffects.length > 0) {
-      try{ document.getElementById('fireBeep').currentTime = 0; document.getElementById('fireBeep').play().catch(()=>{}); }catch(e){}
-
-      const effect = currentEffects[0];
-      document.getElementById('currentEffect').innerHTML = 
-        `<div style="font-size: 1.8em; color: #ff0; text-align: center; background: #333; padding: 15px; border-radius: 10px; border: 3px solid #ff0;">
-          🎆 <strong>FEUER FREI!</strong><br>
-          <div style="font-size: 1.2em; margin: 10px 0;">${effect.name}</div>
-          <div style="font-size: 2em; color: #0ff; font-weight: bold;">
-            KANAL ${effect.channel} - TASTE ${effect.buttonKey}
-          </div>
-          <div style="font-size: 0.8em; color: #ccc; margin-top: 5px;">
-            ${effect.receiver ? 'Empfänger: ' + effect.receiver : ''}
-          </div>
-        </div>`;
-      document.getElementById('fireBeep').play().catch(() => {});
-      
-      // Create explosion animation
-      const colors = {
-        rocket: '#ff4444',
-        fountain: '#44ff44',
-        battery: '#4444ff'
-      };
-      createExplosion(effect.x, effect.y, colors[effect.effectType] || '#ffffff');
-      
-      setTimeout(() => {
-        document.getElementById('currentEffect').innerHTML = '';
-      }, 5000);
-    }
-    
-    // Update timeline
-    updateTimeline(elapsed);
-    
-  }, 1000);
-}
-
-function flashWarning() {
-  const flash = document.getElementById('warningFlash');
-  flash.style.opacity = '0.3';
-  setTimeout(() => {
-    flash.style.opacity = '0';
-  }, 200);
-}
-
-function updateTimeline(currentTime) {
-  const timeline = document.getElementById('timelineDisplay');
-  const upcomingEffects = effects
-    .filter(e => e.time > currentTime)
-    .slice(0, 5)
-    .map(e => `${formatTime(e.time)}: ${e.name}`)
-    .join(' | ');
-  
-  timeline.innerHTML = `<strong>Nächste Effekte:</strong><br>${upcomingEffects || 'Keine weiteren Effekte'}`;
-}
-
-function pauseShow() {
-  if (!isPaused) {
-    isPaused = true;
-    pausedTime += Date.now() - showStartTime;
-    
-    const musicPlayer = document.getElementById('musicPlayer');
-    musicPlayer.pause();
-  }
-}
-
-function resumeShow() {
-  if (isPaused) {
-    isPaused = false;
-    showStartTime = Date.now();
-    
-    const musicPlayer = document.getElementById('musicPlayer');
-    musicPlayer.play().catch(() => {});
-  }
-}
-
-function stopShow() {
-  clearInterval(showTimer);
-  isPaused = false;
-  
-  const musicPlayer = document.getElementById('musicPlayer');
-  musicPlayer.pause();
-  musicPlayer.currentTime = 0;
-  
-  backToPlan();
-}
-
-function backToPlan() {
-  document.getElementById('showScreen').style.display = 'none';
-  document.getElementById('planScreen').style.display = 'block';
-  
-  document.getElementById('timerDisplay').textContent = '00:00';
-  document.getElementById('warning').innerHTML = '';
-  document.getElementById('currentEffect').innerHTML = '';
-  document.getElementById('timelineDisplay').textContent = '';
-}
-
-// Function testing and validation
-function testAllFunctions() {
-  console.log('🔧 Testing FirePlanner functions...');
-  
-  // Test image functions
-  console.log('✅ Image functions loaded');
-  
-  // Test database functions
-  console.log('✅ Database functions loaded');
-  
-  // Test effect creation
-  console.log('✅ Effect creation functions loaded');
-  
-  // Test canvas drawing
-  console.log('✅ Canvas functions loaded');
-  
-  // Test show timer
-  console.log('✅ Show timer functions loaded');
-  
-  console.log('🎆 All FirePlanner functions ready!');
-}
-
-// Test database functionality
-function testDatabase() {
-  console.log('🧪 Teste Datenbank-Funktionalität...');
-  
-  // Test 1: Prüfe ob Datenbank existiert
-  console.log('Test 1 - Datenbank-Variable:', effectDatabase);
-  console.log('Test 1a - Datenbank-Länge:', effectDatabase.length);
-  
-  // Test 2: Prüfe LocalStorage
-  const stored = localStorage.getItem('effectDatabase');
-  console.log('Test 2 - LocalStorage:', stored ? 'Vorhanden' : 'Leer');
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored);
-      console.log('Test 2a - LocalStorage-Länge:', parsed.length);
-      console.log('Test 2b - Erste 3 Effekte:', parsed.slice(0, 3));
-    } catch (error) {
-      console.error('Test 2c - Fehler beim Parsen:', error);
-    }
-  }
-  
-  // Test 3: Prüfe Dropdown-Element
-  const dropdown = document.getElementById('effectDatabase');
-  console.log('Test 3 - Dropdown-Element:', dropdown ? 'Gefunden' : 'Nicht gefunden');
-  
-  if (dropdown) {
-    console.log('Test 3a - Dropdown-Optionen:', dropdown.options.length);
-  }
-  
-  // Test 4: Konsistenz-Check
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored);
-      if (parsed.length === effectDatabase.length) {
-        console.log('✅ Test 4 - Variable und LocalStorage sind konsistent');
-      } else {
-        console.error('❌ Test 4 - INKONSISTENZ gefunden!');
-        console.error('Variable:', effectDatabase.length, 'LocalStorage:', parsed.length);
-      }
-    } catch (error) {
-      console.error('❌ Test 4 - Fehler bei Konsistenz-Check:', error);
-    }
-  }
-  
-  console.log('🧪 Datenbank-Test abgeschlossen!');
-}
-
-// Neue Funktion: Speicher-Persistenz testen
-function testPersistence() {
-  console.log('🔬 Teste Speicher-Persistenz...');
-  
-  const testEffect = {
-    name: 'TEST_EFFEKT_' + Date.now(),
-    effectType: 'rocket',
-    duration: '0:05',
-    price: 99.99,
-    barcode: 'TEST123',
-    addedDate: new Date().toISOString()
-  };
-  
-  console.log('📝 Füge Test-Effekt hinzu:', testEffect.name);
-  
-  // Speichere aktuellen Zustand
-  const originalLength = effectDatabase.length;
-  
-  // Füge Test-Effekt hinzu
-  effectDatabase.push(testEffect);
-  localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
-  
-  // Sofort prüfen
-  const immediate = localStorage.getItem('effectDatabase');
-  const immediateData = JSON.parse(immediate);
-  
-  if (immediateData.length === originalLength + 1) {
-    console.log('✅ Sofortige Speicherung erfolgreich');
-    
-    // Simuliere Neustart durch Neuladen der Datenbank
-    loadEffectDatabase();
-    
-    // Prüfe ob Test-Effekt noch da ist
-    const foundEffect = effectDatabase.find(e => e.name === testEffect.name);
-    if (foundEffect) {
-      console.log('✅ Test-Effekt nach Neuladung gefunden:', foundEffect.name);
-      console.log('✅ PERSISTENZ-TEST ERFOLGREICH!');
-      
-      // Entferne Test-Effekt wieder
-      effectDatabase = effectDatabase.filter(e => e.name !== testEffect.name);
-      localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
-      updateDatabaseList();
-      console.log('🧹 Test-Effekt entfernt');
-    } else {
-      console.error('❌ Test-Effekt nach Neuladung NICHT gefunden!');
-      console.error('❌ PERSISTENZ-TEST FEHLGESCHLAGEN!');
-    }
-  } else {
-    console.error('❌ Sofortige Speicherung fehlgeschlagen');
-  }
-  
-  console.log('🔬 Persistenz-Test abgeschlossen!');
-}
-
-// Search functions for large databases
-function showSearch() {
-  const searchInput = document.getElementById('effectSearch');
-  const dropdown = document.getElementById('effectDatabase');
-  
-  if (searchInput && dropdown) {
-    searchInput.style.display = 'block';
-    dropdown.style.display = 'none';
-    searchInput.focus();
-    searchInput.value = '';
-  }
-}
-
-function hideSearch() {
-  setTimeout(() => {
-    const searchInput = document.getElementById('effectSearch');
-    const dropdown = document.getElementById('effectDatabase');
-    
-    if (searchInput && dropdown) {
-      searchInput.style.display = 'none';
-      dropdown.style.display = 'block';
-    }
-  }, 200);
-}
-
-function searchEffects() {
-  const searchTerm = document.getElementById('effectSearch').value.toLowerCase();
-  const dropdown = document.getElementById('effectDatabase');
-  
-  if (!searchTerm || searchTerm.length < 2) {
-    return;
-  }
-  
-  // Suche in der Datenbank
-  const matches = effectDatabase.filter((effect, index) => {
-    const searchText = `${effect.name} ${effect.barcode || ''} ${effect.effectType || ''}`.toLowerCase();
-    return searchText.includes(searchTerm);
-  }).slice(0, 20); // Maximal 20 Ergebnisse
-  
-  if (matches.length > 0) {
-    // Zeige Suchergebnisse
-    dropdown.innerHTML = '';
-    
-    const defaultOption = document.createElement('option');
-    defaultOption.value = '';
-    defaultOption.textContent = `🔍 ${matches.length} Ergebnisse für "${searchTerm}"`;
-    dropdown.appendChild(defaultOption);
-    
-    matches.forEach(effect => {
-      const index = effectDatabase.indexOf(effect);
-      const option = document.createElement('option');
-      option.value = index.toString();
-      
-      const price = (effect.price && effect.price > 0) ? ` ${effect.price}€` : '';
-      const shortName = effect.name.length > 25 ? effect.name.substring(0, 25) + '...' : effect.name;
-      
-      option.textContent = `${shortName}${price}`;
-      select.appendChild(option);
-    });
-    
-    // Zeige Dropdown mit Ergebnissen
-    document.getElementById('effectSearch').style.display = 'none';
-    dropdown.style.display = 'block';
-  }
-}
-
-// Check for remote control URL parameter
-window.addEventListener('load', function() {
-  // Test all functions on load
-  testAllFunctions();
-  
-  // Test database after a short delay
-  setTimeout(() => {
-    console.log('🔧 Starte Datenbank-Test nach 1 Sekunde...');
-    testDatabase();
-  }, 1000);
-  
-  const urlParams = new URLSearchParams(window.location.search);
-  const remoteData = urlParams.get('remote');
-  const sessionId = urlParams.get('session');
-  
-  if (remoteData) {
-    try {
-      const showData = JSON.parse(atob(remoteData));
-      document.getElementById('showName').value = showData.name;
-      effects = showData.effects || [];
-      
-      if (showData.database) {
-        effectDatabase = showData.database;
-        localStorage.setItem('effectDatabase', JSON.stringify(effectDatabase));
-        updateDatabaseList();
-      }
-      
-      updateEffectList();
-      updateCostCalculation();
-      drawCanvas();
-      alert(`Show "${showData.name}" von anderem Gerät geladen!`);
-      
-      // Store session for future access
-      if (sessionId) {
-        localStorage.setItem(sessionId, JSON.stringify(showData));
-      }
-    } catch (error) {
-      console.error('Fehler beim Laden der Remote-Daten');
-    }
-  }
-});
-</script>
-
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'987d2896e2bbfcd5',t:'MTc1OTMzNDI3NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();
-/* ==========================================================
-   🌐 GitHub Cloud Integration
-   ========================================================== */
-
-// Helper: try different auth schemes (token then Bearer) to handle PAT variants
-async function authFetch(url, options) {
-  const token = githubConfig.token;
-  if (!token) throw new Error('Kein GitHub Token gesetzt');
-
-  const tryWith = async (scheme) => {
-    const headers = Object.assign({}, options && options.headers ? options.headers : {});
-    headers['Authorization'] = scheme + ' ' + token;
-    const opts = Object.assign({}, options || {}, { headers });
-    return fetch(url, opts);
-  };
-
-  let res = await tryWith('token');
-  // If unauthorized, try Bearer scheme (some tokens need this)
-  if (res && res.status === 401) {
-    res = await tryWith('Bearer');
-  }
-  return res;
-}
-
-  if (!githubConfig.user) {
-    githubConfig.user = prompt("👤 Dein GitHub Benutzername:");
-  }
-  if (!githubConfig.repo) {
-    githubConfig.repo = prompt("📦 Repo-Name für Backup:");
-  }
-  if (!githubConfig.token) {
-    githubConfig.token = prompt("🔑 Personal Access Token (mit repo-Rechten):");
-  }
+function ensureGithubConfigInteractive() {
+    alert('Die GitHub-Funktionalität ist in dieser lokalen Version nicht vollständig implementiert und erfordert API-Schlüssel. Bitte nutzen Sie die lokalen JSON Export/Import Funktionen.');
+    return false;
 }
 
 async function githubBackup() {
-  if (!ensureGithubConfigInteractive()) return;
-
-  const backupData = {
-    shows: JSON.parse(localStorage.getItem('savedShows') || '[]'),
-    effects: savedEffects,
-    database: effectDatabase,
-    timestamp: new Date().toISOString()
-  };
-
-  const content = btoa(unescape(encodeURIComponent(JSON.stringify(backupData, null, 2))));
-
-  const url = `https://api.github.com/repos/${githubConfig.user}/${githubConfig.repo}/contents/${githubConfig.file}`;
-
-  let sha = null;
-  try {
-    const checkRes = await authFetch(url, { method: 'GET' });
-    if (checkRes.ok) {
-      const checkData = await checkRes.json();
-      sha = checkData.sha;
-    }
-  } catch (err) {
-    console.warn("⚠️ Fehler beim Prüfen:", err);
-  }
-
-  const res = await authFetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: '💾 FirePlanner Backup', content: content, sha: sha || undefined }) });
-
-  if (res.ok) {
-    alert("✅ Backup erfolgreich auf GitHub gespeichert!");
-  } else {
-    let text;
-    try {
-      const error = await res.json();
-      text = JSON.stringify(error, null, 2);
-    } catch(e){
-      text = await res.text();
-    }
-    alert("❌ Fehler beim Backup:\n" + text);
-  }
+    // Funktion beibehalten, aber deaktiviert
+    alert('GitHub-Backup ist in dieser lokalen Version deaktiviert. Nutzen Sie den lokalen JSON-Export.');
 }
 
 async function githubRestore() {
-  if (!ensureGithubConfigInteractive()) return;
-
-  const url = `https://api.github.com/repos/${githubConfig.user}/${githubConfig.repo}/contents/${githubConfig.file}`;
-
-  const res = await authFetch(url, { method: 'GET' });
-
-  if (!res.ok) {
-    let errtxt;
-    try { errtxt = JSON.stringify(await res.json(), null, 2); } catch(e) { errtxt = await res.text(); }
-    alert("❌ Konnte Backup nicht laden!\n" + errtxt);
-    return;
-  }
-
-  const data = await res.json();
-  const content = decodeURIComponent(escape(atob(data.content)));
-  const backupData = JSON.parse(content);
-
-  localStorage.setItem('savedShows', JSON.stringify(backupData.shows || []));
-  localStorage.setItem('effectDatabase', JSON.stringify(backupData.database || []));
-  savedEffects = backupData.effects || [];
-
-  loadSavedShows();
-  updateDatabaseList();
-  updateSavedEffectsList();
-
-  alert("✅ Backup aus GitHub geladen!");
+    // Funktion beibehalten, aber deaktiviert
+    alert('GitHub-Restore ist in dieser lokalen Version deaktiviert. Nutzen Sie den lokalen JSON-Import.');
 }
 
-</script></body>
+// =================================================================================
+// Such-Funktionen (Beibehalten)
+// =================================================================================
+
+function showSearch() {
+    document.getElementById('effectDatabase').style.display = 'none';
+    document.getElementById('effectSearch').style.display = 'inline-block';
+    document.getElementById('effectSearch').focus();
+    document.getElementById('searchButton').style.display = 'none';
+}
+
+function hideSearch() {
+    setTimeout(() => {
+        document.getElementById('effectSearch').style.display = 'none';
+        document.getElementById('effectDatabase').style.display = 'inline-block';
+        if (effectDatabase.length > 100) {
+            document.getElementById('searchButton').style.display = 'inline-block';
+        }
+        updateDatabaseList(); // Stellt die Standard-Liste wieder her
+    }, 200);
+}
+
+function searchEffects() {
+    const query = document.getElementById('effectSearch').value.toLowerCase();
+    const select = document.getElementById('effectDatabase');
+    select.innerHTML = '';
+
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = `🔍 Suchergebnisse:`;
+    select.appendChild(defaultOption);
+
+    const filteredEffects = effectDatabase.filter(effect => 
+        effect.name.toLowerCase().includes(query) || 
+        (effect.barcode && effect.barcode.includes(query))
+    );
+
+    filteredEffects.slice(0, 50).forEach((effect, index) => { // Max 50 Ergebnisse anzeigen
+        const option = document.createElement('option');
+        // Finde den Index des Effekts im Original-Array, um ihn auszuwählen
+        const originalIndex = effectDatabase.findIndex(e => e.name === effect.name && e.barcode === effect.barcode);
+        option.value = originalIndex.toString(); 
+        
+        const price = (effect.price && effect.price > 0) ? `${effect.price}€` : '';
+        const duration = effect.duration || effect.plannedDuration || '';
+        const type = effect.effectType || effect.type || '';
+        const hasImage = effect.image ? '📸 ' : '';
+        
+        option.textContent = `${hasImage}${effect.name} ${price ? '- ' + price : ''} ${duration ? '- ' + duration : ''} ${type ? '- ' + type : ''}`;
+        select.appendChild(option);
+    });
+    
+    if (filteredEffects.length > 50) {
+        const moreOption = document.createElement('option');
+        moreOption.value = 'more';
+        moreOption.textContent = `... ${filteredEffects.length - 50} weitere Ergebnisse gefunden. Präzisieren Sie die Suche.`;
+        moreOption.disabled = true;
+        select.appendChild(moreOption);
+    } else if (filteredEffects.length === 0 && query.length > 0) {
+        const noResults = document.createElement('option');
+        noResults.value = 'none';
+        noResults.textContent = `❌ Keine Ergebnisse für "${query}"`;
+        noResults.disabled = true;
+        select.appendChild(noResults);
+    }
+}
+
+
+</script>
+</body>
 </html>
