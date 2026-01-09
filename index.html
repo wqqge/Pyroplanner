@@ -3,65 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <title>🎆 FirePlanner 2D - Pro</title>
-/* =========================
-   DRUCKVERSION
-   ========================= */
-@media print {
-
-  /* Grundlayout */
-  body {
-    background: #fff !important;
-    color: #000 !important;
-  }
-
-  /* ALLES AUSBLENDEN */
-  body * {
-    visibility: hidden;
-  }
-
-  /* NUR PLAN + EFFEKT-TABELLE EINBLENDEN */
-  #canvasContainer,
-  #canvasContainer *,
-  #effectOverview,
-  #effectOverview * {
-    visibility: visible;
-  }
-
-  /* Positionierung für Druck */
-  #canvasContainer {
-    position: relative;
-    margin: 0 auto 20px auto;
-    page-break-after: avoid;
-  }
-
-  #effectOverview {
-    page-break-before: always;
-  }
-
-  /* Buttons, Inputs, Steuerung sicher aus */
-  button,
-  input,
-  select,
-  textarea,
-  .controls,
-  #boxControls,
-  #costCalculation,
-  #effectList,
-  #qrModal,
-  #showScreen,
-  h1,
-  h2,
-  h3:not(#effectOverview h3) {
-    display: none !important;
-  }
-
-  /* Canvas sauber drucken */
-  canvas {
-    border: 1px solid #000;
-  }
-
-}
-
 <style>
 body {
   box-sizing: border-box;
